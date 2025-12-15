@@ -1,0 +1,1484 @@
+
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF文档解析查看器</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; height: 100vh; overflow: hidden; }
+        .navbar { height: 56px; background: white; border-bottom: 1px solid #e0e0e0; display: flex; align-items: center; padding: 0 20px; justify-content: space-between; }
+        .navbar-left { display: flex; align-items: center; gap: 20px; }
+        .logo { font-size: 20px; font-weight: bold; color: #333; }
+        .file-info { color: #666; font-size: 14px; }
+        .upload-container { display: flex; align-items: center; justify-content: center; height: calc(100vh - 56px); }
+        .upload-box { background: white; border-radius: 12px; padding: 60px 80px; text-align: center; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
+        .upload-icon { font-size: 64px; margin-bottom: 20px; }
+        .upload-title { font-size: 24px; color: #333; margin-bottom: 10px; }
+        .upload-hint { color: #999; margin-bottom: 30px; }
+        .upload-btn { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; padding: 14px 40px; border-radius: 8px; font-size: 16px; cursor: pointer; }
+        .main-container { display: none; height: calc(100vh - 56px); }
+        .main-container.active { display: flex; }
+        .pdf-panel { width: 50%; background: #f8fafc; display: flex; flex-direction: column; border-right: 1px solid #e2e8f0; }
+        .pdf-toolbar { height: 44px; background: #fff; display: flex; align-items: center; justify-content: center; gap: 15px; color: #0f172a; border-bottom: 1px solid #e2e8f0; }
+        .pdf-toolbar button { background: transparent; border: none; color: #0f172a; cursor: pointer; padding: 5px 10px; font-size: 16px; border-radius: 4px; }
+        .pdf-toolbar button:hover { background: rgba(99,102,241,0.08); }
+        .pdf-toolbar input { width: 60px; text-align: center; padding: 4px 6px; border: 1px solid #cbd5f5; border-radius: 6px; font-size: 14px; color: #0f172a; background: #f8fafc; }
+        .pdf-toolbar input:focus { outline: 2px solid #94a3ff; }
+        .pdf-viewer { flex: 1; overflow: auto; display: flex; flex-direction: column; align-items: center; padding: 20px; background: #f8fafc; }
+        .pdf-page-container { position: relative; margin-bottom: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.3); }
+        .pdf-page { display: block; }
+        .page-number { text-align: center; color: #999; font-size: 12px; margin-top: 5px; padding-bottom: 15px; border-bottom: 1px solid #666; margin-bottom: 15px; }
+        .highlight-overlay { position: absolute; background: rgba(100, 149, 237, 0.4); border: 2px solid #4169E1; pointer-events: none; }
+        .content-panel { width: 50%; background: white; display: flex; flex-direction: column; position: relative; }
+        .content-toolbar { height: 44px; background: #f8f9fa; border-bottom: 1px solid #e0e0e0; display: flex; align-items: center; padding: 0 20px; gap: 12px; }
+        .content-toolbar .tab { padding: 8px 16px; border-radius: 4px; background: #667eea; color: white; font-weight: 500; }
+        .toolbar-actions { margin-left: auto; display: flex; gap: 10px; }
+        .toolbar-btn { padding: 8px; border-radius: 10px; border: 1px solid #d0d5dd; background: white; color: #333; cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; transition: all 0.2s ease; }
+        .toolbar-btn svg { width: 18px; height: 18px; }
+        .toolbar-btn:hover { background: #eef2ff; border-color: #b0b8f6; color: #4a59c4; }
+        .toolbar-btn.primary { border: none; box-shadow: 0 8px 20px rgba(102,126,234,0.25); }
+        .content-viewer { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 20px 30px; }
+        .content-viewer h1 { font-size: 24px; margin-bottom: 16px; color: #333; word-wrap: break-word; }
+        .content-viewer h2 { font-size: 20px; margin: 24px 0 12px; color: #444; word-wrap: break-word; }
+        .content-block .content-text { line-height: 1.8; color: #333; word-wrap: break-word; overflow-wrap: break-word; white-space: pre-wrap; }
+        .content-viewer ul { margin: 8px 0 8px 20px; padding-left: 20px; }
+        .content-viewer li { line-height: 1.8; margin-bottom: 4px; color: #333; }
+        .content-viewer img { max-width: 100%; margin: 10px 0; border-radius: 4px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); }
+        .image-caption { font-size: 13px; color: #666; text-align: center; margin-top: 6px; }
+        .image-footnote { font-size: 12px; color: #999; margin-top: 4px; text-align: center; }
+        .heading-block { font-weight: 600; }
+        .heading-level-1 .content-text { font-size: 22px; }
+        .heading-level-2 .content-text { font-size: 18px; }
+        .heading-level-3 .content-text { font-size: 16px; }
+        .heading-level-4 .content-text { font-size: 15px; }
+        .heading-level-5 .content-text { font-size: 14px; }
+        .heading-level-6 .content-text { font-size: 13px; }
+        .footer-block .content-text { font-size: 12px; color: #777; }
+        .metadata-block .content-text { font-size: 12px; color: #999; }
+        .content-viewer pre { background: #f5f5f5; padding: 15px; border-radius: 6px; overflow-x: auto; white-space: pre-wrap; word-wrap: break-word; }
+        .page-divider { text-align: center; color: #999; font-size: 12px; padding: 15px 0; margin: 20px 0; border-top: 1px solid #e0e0e0; border-bottom: 1px solid #e0e0e0; background: #f9f9f9; }
+        .content-block { position: relative; cursor: pointer; padding: 8px; margin: 4px -8px; border-radius: 4px; border: 1px solid transparent; transition: background 0.2s ease; }
+        .content-block:hover { background: rgba(15, 23, 42, 0.03); border-color: transparent; }
+        .content-block.active { background: rgba(33, 150, 243, 0.12); border-color: #2196F3; }
+        .content-block.translated { border-color: transparent; background: transparent; }
+        .content-block.hovering { border-color: rgba(102,126,234,0.8); background: rgba(102,126,234,0.08); }
+        .modal-overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.4); display: flex; align-items: center; justify-content: center; z-index: 1100; }
+        .modal-overlay.hidden { display: none; }
+        .modal { background: white; border-radius: 12px; width: min(720px, 90%); max-height: 80vh; display: flex; flex-direction: column; box-shadow: 0 24px 60px rgba(15,23,42,0.25); }
+        .modal.small { width: min(420px, 90%); }
+        .modal-header { padding: 16px 20px; border-bottom: 1px solid #f2f4f7; display: flex; align-items: center; justify-content: space-between; }
+        .modal-body { padding: 20px; overflow-y: auto; }
+        .modal-footer { padding: 16px 20px; border-top: 1px solid #f2f4f7; display: flex; justify-content: flex-end; gap: 10px; }
+        .modal textarea { width: 100%; min-height: 220px; border: 1px solid #d0d5dd; border-radius: 8px; padding: 12px; font-size: 14px; resize: vertical; }
+        .modal input, .modal select { width: 100%; border: 1px solid #d0d5dd; border-radius: 6px; padding: 6px 10px; font-size: 14px; }
+        .modal label { font-size: 13px; color: #555; margin-bottom: 6px; display: block; }
+        .modal .form-row { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+        .modal .radio-group { display: flex; gap: 20px; align-items: center; }
+        #openaiFields { display: none; }
+        .btn { padding: 8px 16px; border-radius: 6px; border: none; cursor: pointer; font-size: 14px; }
+        .btn.primary { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }
+        .btn.secondary { background: #f3f4f6; color: #333; }
+        .action-menu { position: absolute; top: -6px; right: 0; background: white; border-radius: 999px; box-shadow: 0 10px 30px rgba(15,23,42,0.15); display: flex; align-items: center; padding: 6px 12px; gap: 6px; z-index: 5; border: 1px solid rgba(99,102,241,0.2); opacity: 0; transform: translateY(-6px); pointer-events: none; transition: opacity 0.18s ease, transform 0.18s ease; }
+        .action-menu.visible { opacity: 1; transform: translateY(0); pointer-events: auto; }
+        .action-menu button { border: none; background: transparent; cursor: pointer; padding: 6px 8px; border-radius: 6px; font-size: 13px; display: flex; align-items: center; gap: 4px; color: #475467; }
+        .action-menu button svg { width: 18px; height: 18px; }
+        .action-menu button:hover { background: #eef2ff; color: #4a59c4; }
+        .toast { position: fixed; bottom: 30px; right: 30px; background: rgba(17,24,39,0.9); color: white; padding: 10px 16px; border-radius: 8px; box-shadow: 0 12px 30px rgba(15,23,42,0.3); opacity: 0; transform: translateY(20px); transition: all 0.3s ease; z-index: 1300; }
+        .toast.show { opacity: 1; transform: translateY(0); }
+        .translation-overlay { position: absolute; top: 44px; left: 0; right: 0; bottom: 0; background: rgba(255,255,255,0.92); display: flex; align-items: center; justify-content: center; z-index: 20; }
+        .translation-overlay.hidden { display: none; }
+        .translation-overlay-content { text-align: center; padding: 30px; border-radius: 12px; background: rgba(255,255,255,0.95); box-shadow: 0 15px 45px rgba(15,23,42,0.15); min-width: 320px; max-width: 420px; }
+        .translation-overlay-title { font-size: 16px; font-weight: 600; color: #1f2937; margin-bottom: 8px; }
+        .translation-overlay-detail { font-size: 13px; color: #6b7280; margin-bottom: 16px; }
+        .translation-progress { width: 100%; height: 6px; background: #e5e7eb; border-radius: 4px; overflow: hidden; }
+        .translation-progress-bar { height: 100%; width: 0%; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); transition: width 0.3s ease; border-radius: 4px; }
+        .translation-spinner { width: 32px; height: 32px; border: 3px solid #e5e7eb; border-top-color: #667eea; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 16px; }
+        .loading-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(255,255,255,0.9); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 1000; }
+        .loading-overlay.hidden { display: none; }
+        .spinner { width: 50px; height: 50px; border: 4px solid #f3f3f3; border-top: 4px solid #667eea; border-radius: 50%; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .loading-text { margin-top: 20px; color: #666; }
+        .progress-bar { width: 300px; height: 6px; background: #e0e0e0; border-radius: 3px; margin-top: 15px; }
+        .progress-fill { height: 100%; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); transition: width 0.3s; border-radius: 3px; }
+        .resizer { width: 4px; background: #e0e0e0; cursor: col-resize; }
+        .resizer:hover { background: #667eea; }
+        .katex { font-size: 1em; }
+        .katex-display { overflow-x: auto; overflow-y: hidden; padding: 5px 0; }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="navbar-left">
+            <span class="logo">PDF解析查看器</span>
+            <span class="file-info" id="fileInfo"></span>
+        </div>
+        <div class="navbar-right">
+            <button class="upload-btn" onclick="document.getElementById('fileInput').click()" style="padding: 8px 20px; font-size: 14px;">上传新文件</button>
+        </div>
+    </nav>
+    <div class="upload-container" id="uploadContainer">
+        <div class="upload-box">
+            <div class="upload-icon">📄</div>
+            <div class="upload-title">上传PDF文档</div>
+            <div class="upload-hint">支持 PDF、DOC、DOCX、PPT、PPTX 格式，最大 200MB</div>
+            <button class="upload-btn" onclick="document.getElementById('fileInput').click()">选择文件</button>
+        </div>
+    </div>
+    <input type="file" id="fileInput" accept=".pdf,.doc,.docx,.ppt,.pptx" style="display:none">
+    <div class="main-container" id="mainContainer">
+        <div class="pdf-panel" id="pdfPanel">
+            <div class="pdf-toolbar">
+                <button onclick="prevPage()">◀</button>
+                <div class="page-controller" style="display:flex;align-items:center;gap:6px;">
+                    <input type="number" id="pageJumpInput" min="1" value="1">
+                    <span>/ <span id="totalPages">1</span></span>
+                </div>
+                <button onclick="nextPage()">▶</button>
+                <button onclick="zoomOut()">−</button>
+                <span id="zoomLevel">150%</span>
+                <button onclick="zoomIn()">+</button>
+            </div>
+            <div class="pdf-viewer" id="pdfViewer"></div>
+        </div>
+        <div class="resizer" id="resizer"></div>
+        <div class="content-panel" id="contentPanel">
+            <div class="content-toolbar">
+                <span class="tab">Markdown</span>
+                <div class="toolbar-actions">
+                    <button class="toolbar-btn" id="downloadPdfBtn" title="下载译文PDF">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                            <polyline points="7 10 12 15 17 10" />
+                            <line x1="12" y1="15" x2="12" y2="3" />
+                        </svg>
+                    </button>
+                    <button class="toolbar-btn" id="translateSettingsBtn" title="设置">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="#4B5563" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M12.22 2H11.78C11.23 2 10.74 2.37 10.61 2.91L10.33 4.14C10.25 4.51 9.94 4.8 9.57 4.9C9.17 5.01 8.78 5.17 8.41 5.38C8.07 5.57 7.64 5.56 7.32 5.35L6.23 4.63C5.77 4.33 5.16 4.41 4.8 4.8L4.49 5.11C4.13 5.47 4.05 6.08 4.35 6.54L5.07 7.63C5.28 7.95 5.29 8.38 5.1 8.72C4.89 9.09 4.73 9.48 4.62 9.88C4.52 10.25 4.23 10.56 3.86 10.64L2.63 10.92C2.09 11.05 1.72 11.54 1.72 12.09V12.53C1.72 13.08 2.09 13.57 2.63 13.7L3.86 13.98C4.23 14.06 4.52 14.37 4.62 14.74C4.73 15.14 4.89 15.53 5.1 15.9C5.29 16.24 5.28 16.67 5.07 16.99L4.35 18.08C4.05 18.54 4.13 19.15 4.49 19.51L4.8 19.82C5.16 20.21 5.77 20.29 6.23 19.99L7.32 19.27C7.64 19.06 8.07 19.05 8.41 19.24C8.78 19.45 9.17 19.61 9.57 19.72C9.94 19.82 10.25 20.11 10.33 20.48L10.61 21.71C10.74 22.25 11.23 22.62 11.78 22.62H12.22C12.77 22.62 13.26 22.25 13.39 21.71L13.67 20.48C13.75 20.11 14.06 19.82 14.43 19.72C14.83 19.61 15.22 19.45 15.59 19.24C15.93 19.05 16.36 19.06 16.68 19.27L17.77 19.99C18.23 20.29 18.84 20.21 19.2 19.82L19.51 19.51C19.87 19.15 19.95 18.54 19.65 18.08L18.93 16.99C18.72 16.67 18.71 16.24 18.9 15.9C19.11 15.53 19.27 15.14 19.38 14.74C19.48 14.37 19.77 14.06 20.14 13.98L21.37 13.7C21.91 13.57 22.28 13.08 22.28 12.53V12.09C22.28 11.54 21.91 11.05 21.37 10.92L20.14 10.64C19.77 10.56 19.48 10.25 19.38 9.88C19.27 9.48 19.11 9.09 18.9 8.72C18.71 8.38 18.72 7.95 18.93 7.63L19.65 6.54C19.95 6.08 19.87 5.47 19.51 5.11L19.2 4.8C18.84 4.41 18.23 4.33 17.77 4.63L16.68 5.35C16.36 5.56 15.93 5.57 15.59 5.38C15.22 5.17 14.83 5.01 14.43 4.9C14.06 4.8 13.75 4.51 13.67 4.14L13.39 2.91C13.26 2.37 12.77 2 12.22 2Z" />
+                            <circle cx="12" cy="12" r="3" />
+                        </svg>
+                    </button>
+                    <button class="toolbar-btn primary" id="translateAllBtn" title="全文翻译">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+                            <path d="M19 3H21V8" />
+                            <path d="M5 21H3V16" />
+                            <path d="M4 6H10V10H4Z" />
+                            <path d="M7 4V12" />
+                            <path d="M14 20L17 12L20 20" />
+                            <path d="M15 17H19" />
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            <div class="content-viewer" id="contentViewer"></div>
+            <div class="translation-overlay hidden" id="translationOverlay">
+                <div class="translation-overlay-content">
+                    <div class="translation-spinner"></div>
+                    <div class="translation-overlay-title" id="translationOverlayText">翻译中，请稍后...</div>
+                    <div class="translation-overlay-detail" id="translationOverlayDetail"></div>
+                    <div class="translation-progress">
+                        <div class="translation-progress-bar" id="translationOverlayBar"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="loading-overlay hidden" id="loadingOverlay">
+        <div class="spinner"></div>
+        <div class="loading-text" id="loadingText">正在处理...</div>
+        <div class="progress-bar"><div class="progress-fill" id="progressFill" style="width: 0%"></div></div>
+    </div>
+    <div class="modal-overlay hidden" id="translationModal">
+        <div class="modal">
+            <div class="modal-header">
+                <strong id="translationModalTitle">翻译结果</strong>
+                <button class="toolbar-btn" onclick="closeTranslationModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <textarea id="translationModalText" readonly></textarea>
+            </div>
+            <div class="modal-footer">
+                <button class="btn secondary" onclick="copyTranslationResult()">复制结果</button>
+                <button class="btn primary" onclick="closeTranslationModal()">关闭</button>
+            </div>
+        </div>
+    </div>
+    <div class="modal-overlay hidden" id="translationSettingsModal">
+        <div class="modal small">
+            <div class="modal-header">
+                <strong>翻译设置</strong>
+                <button class="toolbar-btn" onclick="closeSettingsModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-row">
+                    <label>翻译渠道</label>
+                    <div class="radio-group">
+                        <label><input type="radio" name="provider" value="deeplx" checked> DeepLX</label>
+                        <label><input type="radio" name="provider" value="openai"> OpenAI兼容</label>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <label>源语言</label>
+                    <input type="text" id="sourceLangInput" placeholder="例如 EN">
+                </div>
+                <div class="form-row">
+                    <label>目标语言</label>
+                    <input type="text" id="targetLangInput" placeholder="例如 ZH">
+                </div>
+                <div id="openaiFields">
+                    <div class="form-row">
+                        <label>API Base URL</label>
+                        <input type="text" id="openaiUrlInput">
+                    </div>
+                    <div class="form-row">
+                        <label>API Key</label>
+                        <input type="password" id="openaiKeyInput">
+                    </div>
+                    <div class="form-row">
+                        <label>模型名称</label>
+                        <input type="text" id="openaiModelInput">
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn secondary" onclick="closeSettingsModal()">取消</button>
+                <button class="btn primary" onclick="saveSettings()">保存</button>
+            </div>
+        </div>
+    </div>
+    <div id="blockActionMenu" class="action-menu">
+        <button data-action="copy">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#1F2937" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="5" y="9" width="11" height="11" rx="1.5" ry="1.5" />
+                <path d="M9 9V6C9 4.89543 9.89543 4 11 4H18C19.1046 4 20 4.89543 20 6V13C20 14.1046 19.1046 15 18 15H16" />
+            </svg>
+        </button>
+        <button data-action="edit">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                <path d="M14 5l5 5L8 21H3v-5L14 5z" stroke-linecap="round" stroke-linejoin="round"></path>
+                <path d="M12 7l5 5" stroke-linecap="round" stroke-linejoin="round"></path>
+            </svg>
+        </button>
+        <button data-action="translate">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+                <path d="M19 3H21V8" />
+                <path d="M5 21H3V16" />
+                <path d="M4 6H10V10H4Z" />
+                <path d="M7 4V12" />
+                <path d="M14 20L17 12L20 20" />
+                <path d="M15 17H19" />
+            </svg>
+        </button>
+    </div>
+    <div id="toast" class="toast"></div>
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        let pdfDoc = null;
+        let currentPage = 1;
+        let scale = 1.5;
+        let currentTaskId = null;
+        let contentList = [];
+        let pageMappings = {};
+        let pageData = {};
+        let currentMarkdown = '';
+        let translationSettings = {
+            provider: 'deeplx',
+            source_lang: 'EN',
+            target_lang: 'ZH',
+            openai: { base_url: '', api_key: '', model: '' }
+        };
+        let actionMenuIndex = null;
+        let actionMenuHideTimer = null;
+        let actionMenuShowTimer = null;
+        let hoveredBlock = null;
+        let translationQueue = [];
+        let translationResults = [];
+        let blockTranslationBuffer = {};
+        let translationInProgress = false;
+        let inlineTranslationInProgress = false;
+        let completedTranslationChunks = 0;
+        let markdownMathPlaceholders = [];
+        const MATH_PLACEHOLDER_PREFIX = '\uE000MATH_';
+        const MATH_PLACEHOLDER_SUFFIX = '\uE001';
+        const MAX_CHUNK_CHARS = 3200;
+
+        const fileInput = document.getElementById('fileInput');
+        const uploadContainer = document.getElementById('uploadContainer');
+        const mainContainer = document.getElementById('mainContainer');
+        const loadingOverlay = document.getElementById('loadingOverlay');
+        const loadingText = document.getElementById('loadingText');
+        const progressFill = document.getElementById('progressFill');
+        const pdfViewer = document.getElementById('pdfViewer');
+        const contentViewer = document.getElementById('contentViewer');
+        const translateAllBtn = document.getElementById('translateAllBtn');
+        const translateSettingsBtn = document.getElementById('translateSettingsBtn');
+        const translationModal = document.getElementById('translationModal');
+        const translationModalTitle = document.getElementById('translationModalTitle');
+        const translationModalText = document.getElementById('translationModalText');
+        const translationSettingsModal = document.getElementById('translationSettingsModal');
+        const sourceLangInput = document.getElementById('sourceLangInput');
+        const targetLangInput = document.getElementById('targetLangInput');
+        const openaiUrlInput = document.getElementById('openaiUrlInput');
+        const openaiKeyInput = document.getElementById('openaiKeyInput');
+        const openaiModelInput = document.getElementById('openaiModelInput');
+        const openaiFields = document.getElementById('openaiFields');
+        const actionMenu = document.getElementById('blockActionMenu');
+        const toastEl = document.getElementById('toast');
+        const providerRadios = document.querySelectorAll('input[name="provider"]');
+        const translationOverlay = document.getElementById('translationOverlay');
+        const translationOverlayText = document.getElementById('translationOverlayText');
+        const translationOverlayDetail = document.getElementById('translationOverlayDetail');
+        const translationOverlayBar = document.getElementById('translationOverlayBar');
+        const urlParams = new URLSearchParams(window.location.search);
+        const initialTaskId = urlParams.get('task_id');
+        const pageJumpInput = document.getElementById('pageJumpInput');
+
+        translateAllBtn.addEventListener('click', translateMarkdown);
+        translateSettingsBtn.addEventListener('click', () => {
+            updateSettingsForm();
+            openSettingsModal();
+        });
+        const downloadPdfBtn = document.getElementById('downloadPdfBtn');
+        downloadPdfBtn.addEventListener('click', downloadTranslatedPdf);
+        providerRadios.forEach(radio => radio.addEventListener('change', updateOpenAIFieldVisibility));
+        actionMenu.addEventListener('mouseenter', () => {
+            clearTimeout(actionMenuHideTimer);
+            clearTimeout(actionMenuShowTimer);
+        });
+        actionMenu.addEventListener('mouseleave', () => scheduleHideActionMenu());
+        actionMenu.querySelectorAll('button').forEach(btn => {
+            btn.addEventListener('click', () => {
+                if (actionMenuIndex === null) return;
+                const action = btn.dataset.action;
+                if (action === 'copy') copyBlockText(actionMenuIndex);
+                else if (action === 'translate') translateBlock(actionMenuIndex);
+                else if (action === 'edit') editBlock(actionMenuIndex);
+            });
+        });
+
+        loadTranslationSettings();
+        if (pageJumpInput) {
+            pageJumpInput.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter') {
+                    const value = parseInt(pageJumpInput.value, 10);
+                    if (!isNaN(value)) {
+                        jumpToPage(value);
+                    }
+                }
+            });
+        }
+        if (initialTaskId) {
+            resumeExistingTask(initialTaskId);
+        }
+
+        fileInput.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            document.getElementById('fileInfo').textContent = file.name;
+            loadingOverlay.classList.remove('hidden');
+            loadingText.textContent = '正在上传文件...';
+            progressFill.style.width = '10%';
+            const formData = new FormData();
+            formData.append('file', file);
+            try {
+                const response = await fetch('/api/parse', { method: 'POST', body: formData });
+                const result = await response.json();
+                if (result.task_id) { currentTaskId = result.task_id; pollTaskStatus(); }
+                else { showError(result.error || '上传失败'); }
+            } catch (error) { showError('网络错误: ' + error.message); }
+        });
+
+        async function pollTaskStatus() {
+            const interval = setInterval(async () => {
+                try {
+                    const response = await fetch(`/api/task/${currentTaskId}`);
+                    const task = await response.json();
+                    loadingText.textContent = task.message;
+                    progressFill.style.width = task.progress + '%';
+                    if (task.status === 'completed') { clearInterval(interval); loadResult(); }
+                    else if (task.status === 'failed') { clearInterval(interval); showError(task.error || '解析失败'); }
+                } catch (error) { console.error('Polling error:', error); }
+            }, 2000);
+        }
+
+        async function loadResult() {
+            loadingText.textContent = '正在加载结果...';
+            progressFill.style.width = '95%';
+            try {
+                const resultResponse = await fetch(`/api/result/${currentTaskId}`);
+                const resultData = await resultResponse.json();
+                currentMarkdown = resultData.markdown || '';
+                contentList = resultData.content_list || [];
+                pageMappings = resultData.page_mappings || {};
+                renderContentBlocks(resultData.markdown);
+                const pdfResponse = await fetch(`/api/pdf/${currentTaskId}`);
+                const pdfBlob = await pdfResponse.blob();
+                await loadPDF(URL.createObjectURL(pdfBlob));
+                uploadContainer.style.display = 'none';
+                mainContainer.classList.add('active');
+                loadingOverlay.classList.add('hidden');
+            } catch (error) { showError('加载结果失败: ' + error.message); }
+        }
+
+        function renderContentBlocks(markdown) {
+            if (markdown !== undefined) {
+                currentMarkdown = markdown || '';
+            }
+            if (!contentList || !contentList.length) {
+                let processed = markdown || '';
+                processed = processed.replace(/!\[([^\]]*)\]\(images\/([^)]+)\)/g,
+                    '![$1](/api/image/' + currentTaskId + '/$2)');
+                const html = marked.parse(processed);
+                contentViewer.innerHTML = html;
+                renderMathInContainer(contentViewer);
+                return;
+            }
+
+            contentViewer.innerHTML = '';
+            let lastPageIdx = -1;
+
+            contentList.forEach((item, index) => {
+                if (lastPageIdx !== -1 && item.page_idx !== undefined && item.page_idx !== lastPageIdx) {
+                    contentViewer.appendChild(createPageDivider(lastPageIdx));
+                }
+                const block = createContentBlock(item, index);
+                if (block) {
+                    contentViewer.appendChild(block);
+                    attachBlockActions(block, index);
+                }
+                if (item.page_idx !== undefined) {
+                    lastPageIdx = item.page_idx;
+                }
+            });
+
+            if (lastPageIdx !== -1) {
+                contentViewer.appendChild(createPageDivider(lastPageIdx));
+            }
+
+            renderMathInContainer(contentViewer);
+        }
+
+        function createPageDivider(pageIdx) {
+            const divider = document.createElement('div');
+            divider.className = 'page-divider';
+            divider.textContent = '第 ' + (pageIdx + 1) + ' 页';
+            return divider;
+        }
+
+        function createContentBlock(item, index) {
+            const block = document.createElement('div');
+            block.classList.add('content-block');
+            if (item.text_level) {
+                const level = Math.min(6, Math.max(1, item.text_level));
+                block.classList.add('heading-block', 'heading-level-' + level);
+            }
+            if (item.type === 'header' || item.type === 'page_number') {
+                block.classList.add('metadata-block');
+            }
+            if (item.type === 'footer') {
+                block.classList.add('footer-block');
+            }
+            block.dataset.index = index;
+            block.addEventListener('click', () => highlightInPDF(index, block));
+
+            if (item.type === 'image') {
+                const imgName = (item.img_path || '').split('/').pop();
+                if (imgName) {
+                    const img = document.createElement('img');
+                    img.src = `/api/image/${currentTaskId}/${imgName}`;
+                    img.alt = (item.image_caption && item.image_caption.join(' ')) || '图片';
+                    block.appendChild(img);
+                }
+                if (item.image_caption && item.image_caption.length) {
+                    const caption = document.createElement('div');
+                    caption.className = 'image-caption';
+                    caption.textContent = item.image_caption.join(' ');
+                    block.appendChild(caption);
+                }
+                if (item.image_footnote && item.image_footnote.length) {
+                    const footnote = document.createElement('div');
+                    footnote.className = 'image-footnote';
+                    footnote.textContent = item.image_footnote.join(' ');
+                    block.appendChild(footnote);
+                }
+            } else if (item.type === 'list') {
+                if (item.translated_text) {
+                    const textEl = document.createElement('div');
+                    textEl.className = 'content-text';
+                    textEl.textContent = item.translated_text;
+                    block.appendChild(textEl);
+                } else {
+                    const listEl = document.createElement('ul');
+                    (item.list_items || []).forEach(text => {
+                        const li = document.createElement('li');
+                        li.textContent = text;
+                        listEl.appendChild(li);
+                    });
+                    block.appendChild(listEl);
+                }
+            } else {
+                const textEl = document.createElement('div');
+                textEl.className = 'content-text';
+                textEl.textContent = item.translated_text || item.text || '';
+                block.appendChild(textEl);
+            }
+
+            return block;
+        }
+
+        function renderMathInContainer(target) {
+            if (!target || typeof renderMathInElement !== 'function') return;
+            try {
+                renderMathInElement(target, {
+                    delimiters: [
+                        {left: '$$', right: '$$', display: true},
+                        {left: '$', right: '$', display: false}
+                    ],
+                    throwOnError: false,
+                    trust: true,
+                    strict: false
+                });
+            } catch (error) {
+                console.error('KaTeX render error:', error);
+            }
+        }
+
+        function protectMathExpressions(text, identifier) {
+            if (!text) return { text: '', placeholders: [] };
+            const placeholders = [];
+            let result = '';
+            let index = 0;
+            let counter = 0;
+
+            while (index < text.length) {
+                const char = text[index];
+                if (char === '$') {
+                    const isEscaped = index > 0 && text[index - 1] === '\\';
+                    if (isEscaped) {
+                        result += char;
+                        index += 1;
+                        continue;
+                    }
+                    const isDouble = text[index + 1] === '$';
+                    const delimiter = isDouble ? '$$' : '$';
+                    let searchStart = index + delimiter.length;
+                    let closing = -1;
+                    while (searchStart < text.length) {
+                        const pos = text.indexOf(delimiter, searchStart);
+                        if (pos === -1) break;
+                        if (text[pos - 1] !== '\\') {
+                            closing = pos;
+                            break;
+                        }
+                        searchStart = pos + 1;
+                    }
+                    if (closing === -1) {
+                        result += char;
+                        index += 1;
+                        continue;
+                    }
+                    const matched = text.slice(index, closing + delimiter.length);
+                    const placeholder = `${MATH_PLACEHOLDER_PREFIX}${identifier}_${counter}${MATH_PLACEHOLDER_SUFFIX}`;
+                    placeholders.push({ placeholder, value: matched });
+                    result += placeholder;
+                    index = closing + delimiter.length;
+                    counter += 1;
+                    continue;
+                }
+                result += char;
+                index += 1;
+            }
+
+            return { text: result, placeholders };
+        }
+
+        function restoreMathPlaceholders(text, placeholders) {
+            if (!text || !placeholders || !placeholders.length) return text;
+            let restored = text;
+            placeholders.forEach(item => {
+                const replacement = (item && item.value) ? item.value : '';
+                const pattern = new RegExp(`${escapeRegExp(MATH_PLACEHOLDER_PREFIX)}[^${escapeRegExp(MATH_PLACEHOLDER_SUFFIX)}]+${escapeRegExp(MATH_PLACEHOLDER_SUFFIX)}`);
+                if (pattern.test(restored)) {
+                    restored = restored.replace(pattern, replacement);
+                    return;
+                }
+                const legacyPattern = /\[\[MATH_[^\]]*\]\]?/;
+                if (legacyPattern.test(restored)) {
+                    restored = restored.replace(legacyPattern, replacement);
+                    return;
+                }
+                const looseIdx = restored.indexOf('[[MATH_');
+                if (looseIdx !== -1) {
+                    const endIdx = restored.indexOf(']]', looseIdx);
+                    const until = endIdx !== -1 ? endIdx + 2 : looseIdx + 12;
+                    restored = restored.slice(0, looseIdx) + replacement + restored.slice(until);
+                }
+            });
+            return restored;
+        }
+
+        function escapeRegExp(str) {
+            return str.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&');
+        }
+
+        function restoreBlockMathPlaceholders(blockIndex, text) {
+            const item = contentList[blockIndex];
+            if (!item || !item.math_placeholders) return text;
+            return restoreMathPlaceholders(text, item.math_placeholders);
+        }
+
+        function restoreMarkdownMathPlaceholders(text) {
+            if (!markdownMathPlaceholders || !markdownMathPlaceholders.length) return text;
+            return restoreMathPlaceholders(text, markdownMathPlaceholders);
+        }
+
+        function normalizeTranslatedText(text) {
+            if (!text) return '';
+            return text.replace(/\\n/g, '\n');
+        }
+
+        function attachBlockActions(block, index) {
+            if (!block || !actionMenu) return;
+            block.addEventListener('mouseenter', () => {
+                setHoveredBlock(index);
+                queueShowActionMenu(index);
+            });
+            block.addEventListener('mouseleave', () => {
+                scheduleHideActionMenu();
+            });
+        }
+
+        function setHoveredBlock(index) {
+            if (hoveredBlock) {
+                hoveredBlock.classList.remove('hovering');
+            }
+            hoveredBlock = contentViewer.querySelector(`.content-block[data-index="${index}"]`);
+            if (hoveredBlock) {
+                hoveredBlock.classList.add('hovering');
+                if (actionMenuIndex === index) {
+                    positionActionMenu();
+                }
+            }
+        }
+
+        function clearHoveredBlock() {
+            if (hoveredBlock) {
+                hoveredBlock.classList.remove('hovering');
+                hoveredBlock = null;
+            }
+        }
+
+        function queueShowActionMenu(index) {
+            if (!actionMenu) return;
+            clearTimeout(actionMenuShowTimer);
+            clearTimeout(actionMenuHideTimer);
+            const showMenu = () => {
+                actionMenuIndex = index;
+                const block = contentViewer.querySelector(`.content-block[data-index="${index}"]`);
+                if (block) {
+                    block.appendChild(actionMenu);
+                    positionActionMenu();
+                }
+                requestAnimationFrame(() => actionMenu.classList.add('visible'));
+            };
+            if (actionMenu.classList.contains('visible')) {
+                if (actionMenuIndex === index) {
+                    showMenu();
+                } else {
+                    actionMenu.classList.remove('visible');
+                    actionMenuShowTimer = setTimeout(showMenu, 200);
+                }
+            } else {
+                actionMenuShowTimer = setTimeout(showMenu, 180);
+            }
+        }
+
+        function scheduleHideActionMenu() {
+            clearTimeout(actionMenuShowTimer);
+            clearTimeout(actionMenuHideTimer);
+            actionMenuHideTimer = setTimeout(() => {
+                if (actionMenu) {
+                    actionMenu.classList.remove('visible');
+                    setTimeout(() => {
+                        if (!actionMenu.classList.contains('visible')) {
+                            actionMenuIndex = null;
+                            clearHoveredBlock();
+                        }
+                    }, 220);
+                }
+            }, 260);
+        }
+
+        function positionActionMenu() {
+            if (!actionMenu) return;
+            actionMenu.style.left = '';
+            actionMenu.style.top = '';
+        }
+
+        function getBlockText(index) {
+            if (!contentList || index < 0 || index >= contentList.length) return '';
+            const item = contentList[index];
+            if (!item) return '';
+            if (item.type === 'image') {
+                const caption = (item.image_caption || []).join(' ');
+                const footnote = (item.image_footnote || []).join(' ');
+                item.original_text = item.original_text || (caption || footnote || '');
+                return item.original_text;
+            }
+            if (item.type === 'list') {
+                if (!item.original_text) {
+                    item.original_text = (item.list_items || []).join('\n');
+                }
+                return item.original_text;
+            }
+            item.original_text = item.original_text ?? (item.text || '');
+            return item.original_text;
+        }
+
+        async function copyBlockText(index) {
+            const item = contentList[index];
+            const text = item?.translated_text || getBlockText(index);
+            if (!text) {
+                showToast('当前内容无法复制');
+                return;
+            }
+            try {
+                await navigator.clipboard.writeText(text);
+                showToast('复制成功');
+            } catch (error) {
+                showToast('复制失败');
+            }
+        }
+
+        async function translateBlock(index) {
+            if (translationInProgress || inlineTranslationInProgress) {
+                showToast('当前有翻译任务执行中，请稍后再试');
+                return;
+            }
+            const text = getBlockText(index);
+            if (!text) {
+                showToast('没有可翻译的内容');
+                return;
+            }
+            const protectedResult = protectMathExpressions(text, `INLINE_${index}`);
+            inlineTranslationInProgress = true;
+            showTranslationOverlay('翻译中，请稍后...', '正在翻译所选段落...');
+            try {
+                const translatedRaw = await requestTranslation(protectedResult.text);
+                const translated = normalizeTranslatedText(
+                    restoreMathPlaceholders(translatedRaw, protectedResult.placeholders)
+                );
+                hideTranslationOverlay();
+                inlineTranslationInProgress = false;
+                openTranslationModal('段落翻译', translated);
+            } catch (error) {
+                inlineTranslationInProgress = false;
+                hideTranslationOverlay();
+                showError(error.message || '翻译失败');
+            }
+        }
+
+        function editBlock(index) {
+            if (!contentList || index < 0 || index >= contentList.length) return;
+            const item = contentList[index];
+            if (!item || !item.text) {
+                showToast('该类型暂不支持修正');
+                return;
+            }
+            const updated = prompt('修改文本', item.text);
+            if (updated === null) return;
+            item.text = updated;
+            const node = contentViewer.querySelector(`.content-block[data-index="${index}"] .content-text`);
+            if (node) node.textContent = updated;
+            showToast('内容已更新');
+        }
+
+        function getPageMapping(pageIdx) {
+            if (!pageMappings) return null;
+            return pageMappings[pageIdx] || pageMappings[String(pageIdx)] || null;
+        }
+
+        function convertBBoxToPdfCoords(bbox, pageIdx) {
+            const mapping = getPageMapping(pageIdx);
+            if (!mapping) return bbox;
+
+            const normMinX = mapping.norm_min_x ?? 0;
+            const normMaxX = mapping.norm_max_x ?? (normMinX + 1);
+            const normMinY = mapping.norm_min_y ?? 0;
+            const normMaxY = mapping.norm_max_y ?? (normMinY + 1);
+
+            const actualMinX = mapping.actual_min_x ?? 0;
+            const actualMaxX = mapping.actual_max_x ?? (mapping.page_width ?? 0);
+            const actualMinY = mapping.actual_min_y ?? 0;
+            const actualMaxY = mapping.actual_max_y ?? (mapping.page_height ?? 0);
+
+            const normWidth = Math.max(normMaxX - normMinX, 1);
+            const normHeight = Math.max(normMaxY - normMinY, 1);
+            const actualWidth = Math.max(actualMaxX - actualMinX, 1);
+            const actualHeight = Math.max(actualMaxY - actualMinY, 1);
+
+            const scaleX = actualWidth / normWidth;
+            const scaleY = actualHeight / normHeight;
+
+            const x1 = actualMinX + (bbox[0] - normMinX) * scaleX;
+            const x2 = actualMinX + (bbox[2] - normMinX) * scaleX;
+            const y1 = actualMinY + (bbox[1] - normMinY) * scaleY;
+            const y2 = actualMinY + (bbox[3] - normMinY) * scaleY;
+
+            return [x1, y1, x2, y2];
+        }
+
+        async function loadPDF(url) {
+            pdfDoc = await pdfjsLib.getDocument(url).promise;
+            document.getElementById('totalPages').textContent = pdfDoc.numPages;
+            currentPage = 1;
+            updatePageDisplay();
+            pdfViewer.innerHTML = '';
+            pageData = {};
+            for (let i = 1; i <= pdfDoc.numPages; i++) {
+                await renderPage(i);
+            }
+        }
+
+        async function renderPage(pageNum) {
+            const page = await pdfDoc.getPage(pageNum);
+            const viewport = page.getViewport({ scale: scale });
+            // 高分辨率渲染
+            const renderViewport = page.getViewport({ scale: scale * 2 });
+
+            const container = document.createElement('div');
+            container.className = 'pdf-page-container';
+            container.id = `page-container-${pageNum}`;
+            container.style.width = viewport.width + 'px';
+            container.style.height = viewport.height + 'px';
+
+            const canvas = document.createElement('canvas');
+            canvas.className = 'pdf-page';
+            canvas.width = renderViewport.width;
+            canvas.height = renderViewport.height;
+            canvas.style.width = viewport.width + 'px';
+            canvas.style.height = viewport.height + 'px';
+
+            await page.render({ canvasContext: canvas.getContext('2d'), viewport: renderViewport }).promise;
+            container.appendChild(canvas);
+
+            // 添加页码显示
+            const pageLabel = document.createElement('div');
+            pageLabel.className = 'page-number';
+            pageLabel.textContent = '第 ' + pageNum + ' 页';
+
+            pdfViewer.appendChild(container);
+            pdfViewer.appendChild(pageLabel);
+
+            pageData[pageNum] = {
+                container,
+                canvas,
+                viewport,
+                // PDF.js的viewport.width/height是scale=1.5时的尺寸
+                // bbox是基于PDF原始坐标(72 DPI)的
+                pdfWidth: page.getViewport({ scale: 1 }).width,
+                pdfHeight: page.getViewport({ scale: 1 }).height
+            };
+        }
+
+        function highlightInPDF(index, element) {
+            document.querySelectorAll('.content-block.active').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.highlight-overlay').forEach(el => el.remove());
+            element.classList.add('active');
+
+            if (index < contentList.length) {
+                const item = contentList[index];
+                if (item && item.bbox && item.page_idx !== undefined) {
+                    const pageNum = item.page_idx + 1;
+                    const bbox = convertBBoxToPdfCoords(item.bbox, item.page_idx);
+                    const pd = pageData[pageNum];
+
+                    if (pd) {
+                        const container = pd.container;
+                        container.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+                        // MinerU的bbox坐标是基于PDF原始尺寸(72 DPI)的
+                        // pdfWidth/pdfHeight是scale=1时的PDF尺寸
+                        // viewport.width/height是当前缩放后的显示尺寸
+                        // 缩放比例 = 显示尺寸 / PDF原始尺寸
+                        const scaleX = pd.viewport.width / pd.pdfWidth;
+                        const scaleY = pd.viewport.height / pd.pdfHeight;
+
+                        const overlay = document.createElement('div');
+                        overlay.className = 'highlight-overlay';
+                        overlay.style.left = (bbox[0] * scaleX) + 'px';
+                        overlay.style.top = (bbox[1] * scaleY) + 'px';
+                        overlay.style.width = ((bbox[2] - bbox[0]) * scaleX) + 'px';
+                        overlay.style.height = ((bbox[3] - bbox[1]) * scaleY) + 'px';
+
+                        container.appendChild(overlay);
+                        currentPage = pageNum;
+                        updatePageDisplay();
+                        setTimeout(() => overlay.remove(), 3000);
+                    }
+                }
+            }
+        }
+
+        function updatePageDisplay() {
+            if (pageJumpInput) {
+                pageJumpInput.value = currentPage;
+            }
+        }
+
+        function jumpToPage(pageNumber) {
+            if (!pdfDoc || !pageNumber) return;
+            const target = Math.max(1, Math.min(pdfDoc.numPages, pageNumber));
+            currentPage = target;
+            updatePageDisplay();
+            const container = document.getElementById(`page-container-${currentPage}`);
+            if (container) {
+                container.scrollIntoView({ behavior: 'smooth' });
+            }
+        }
+
+        function prevPage() {
+            if (currentPage > 1) {
+                currentPage--;
+                updatePageDisplay();
+                document.getElementById(`page-container-${currentPage}`).scrollIntoView({ behavior: 'smooth' });
+            }
+        }
+
+        function nextPage() {
+            if (pdfDoc && currentPage < pdfDoc.numPages) {
+                currentPage++;
+                updatePageDisplay();
+                document.getElementById(`page-container-${currentPage}`).scrollIntoView({ behavior: 'smooth' });
+            }
+        }
+
+        function zoomIn() {
+            scale = Math.min(scale + 0.25, 4);
+            document.getElementById('zoomLevel').textContent = Math.round(scale * 100) + '%';
+            if (pdfDoc) reloadPDF();
+        }
+
+        function zoomOut() {
+            scale = Math.max(scale - 0.25, 0.5);
+            document.getElementById('zoomLevel').textContent = Math.round(scale * 100) + '%';
+            if (pdfDoc) reloadPDF();
+        }
+
+        async function reloadPDF() {
+            const scrollPos = pdfViewer.scrollTop;
+            pdfViewer.innerHTML = '';
+            pageData = {};
+            for (let i = 1; i <= pdfDoc.numPages; i++) await renderPage(i);
+            pdfViewer.scrollTop = scrollPos;
+        }
+
+        async function translateMarkdown() {
+            if (translationInProgress || inlineTranslationInProgress) {
+                showToast('已有翻译任务在执行，请稍候...');
+                return;
+            }
+            const queue = buildTranslationQueue();
+            if (!queue.length) {
+                showToast('暂无可翻译内容');
+                return;
+            }
+            translationInProgress = true;
+            translationQueue = queue;
+            translationResults = [];
+            blockTranslationBuffer = {};
+            markdownMathPlaceholders = [];
+            completedTranslationChunks = 0;
+            showTranslationOverlay('翻译中，请稍后...', '正在准备翻译请求...');
+            processTranslationQueue();
+        }
+
+        function buildTranslationQueue() {
+            if (!contentList || !contentList.length) {
+                if (!currentMarkdown) return [];
+                const protectedResult = protectMathExpressions(currentMarkdown, 'MD');
+                markdownMathPlaceholders = protectedResult.placeholders || [];
+                const markdownSegments = splitBlockText(protectedResult.text);
+                return markdownSegments.map((segment, idx) => ({
+                    label: markdownSegments.length === 1 ? '全文' : `全文 · 片段${idx + 1}`,
+                    text: segment,
+                    type: 'markdown'
+                }));
+            }
+
+            const queue = [];
+            contentList.forEach((item, index) => {
+                if (!item || item.type === 'image') return;
+                const text = getBlockText(index);
+                if (!text || text.trim().length < 2) return;
+                const protectedResult = protectMathExpressions(text, `B${index}`);
+                item.math_placeholders = protectedResult.placeholders || [];
+                const segments = splitBlockText(protectedResult.text);
+                const totalParts = segments.length;
+                segments.forEach((segment, partIdx) => {
+                    queue.push({
+                        type: 'block',
+                        label: formatBlockLabel(item, index, partIdx + 1, totalParts),
+                        text: segment,
+                        blockIndex: index,
+                        partIndex: partIdx + 1,
+                        totalParts
+                    });
+                });
+            });
+            return queue;
+        }
+
+        function splitBlockText(text) {
+            if (!text) return [];
+            if (text.length <= MAX_CHUNK_CHARS) return [text];
+
+            const parts = [];
+            const paragraphs = text.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
+            let current = '';
+
+            const pushCurrent = () => {
+                if (current.trim().length) {
+                    parts.push(current.trim());
+                    current = '';
+                }
+            };
+
+            paragraphs.forEach(para => {
+                if (!para) return;
+                if (!current) {
+                    if (para.length > MAX_CHUNK_CHARS) {
+                        parts.push(...splitLongParagraph(para));
+                    } else {
+                        current = para;
+                    }
+                    return;
+                }
+                const candidate = `${current}\n\n${para}`;
+                if (candidate.length > MAX_CHUNK_CHARS) {
+                    pushCurrent();
+                    if (para.length > MAX_CHUNK_CHARS) {
+                        parts.push(...splitLongParagraph(para));
+                    } else {
+                        current = para;
+                    }
+                } else {
+                    current = candidate;
+                }
+            });
+
+            pushCurrent();
+            return parts.length ? parts : [text];
+        }
+
+        function splitLongParagraph(text) {
+            if (!text) return [];
+            const segments = [];
+            let start = 0;
+            while (start < text.length) {
+                let end = Math.min(start + MAX_CHUNK_CHARS, text.length);
+                end = adjustChunkEndForPlaceholders(text, start, end);
+                if (end <= start) {
+                    end = Math.min(start + MAX_CHUNK_CHARS, text.length);
+                }
+                segments.push(text.slice(start, end));
+                start = end;
+            }
+            return segments;
+        }
+
+        function adjustChunkEndForPlaceholders(text, start, end) {
+            if (!text || start >= text.length) return end;
+            if (end >= text.length) return text.length;
+            const lastSentinel = text.lastIndexOf(MATH_PLACEHOLDER_PREFIX, end - 1);
+            if (lastSentinel >= start) {
+                const closing = text.indexOf(MATH_PLACEHOLDER_SUFFIX, lastSentinel + MATH_PLACEHOLDER_PREFIX.length);
+                if (closing !== -1 && closing + MATH_PLACEHOLDER_SUFFIX.length > end) {
+                    return Math.min(closing + MATH_PLACEHOLDER_SUFFIX.length, text.length);
+                }
+            }
+            const oldMarker = text.lastIndexOf('[[MATH_', end - 1);
+            if (oldMarker >= start) {
+                const closingOld = text.indexOf(']]', oldMarker);
+                if (closingOld !== -1 && closingOld + 2 > end) {
+                    return Math.min(closingOld + 2, text.length);
+                }
+            }
+            return end;
+        }
+
+        function formatBlockLabel(item, index, partIndex, totalParts) {
+            const pageLabel = typeof item.page_idx === 'number'
+                ? `第 ${item.page_idx + 1} 页`
+                : '段落';
+            const base = `${pageLabel} · 内容 ${index + 1}`;
+            if (totalParts > 1) {
+                return `${base} (${partIndex}/${totalParts})`;
+            }
+            return base;
+        }
+
+        async function processTranslationQueue() {
+            if (!translationQueue.length) {
+                finishTranslationQueue();
+                return;
+            }
+            const queueSnapshot = translationQueue.slice();
+            const payload = {
+                provider: translationSettings.provider,
+                source_lang: translationSettings.source_lang,
+                target_lang: translationSettings.target_lang,
+                chunks: queueSnapshot.map(chunk => ({ text: chunk.text || '' }))
+            };
+            if (translationSettings.provider === 'openai') {
+                payload.config = translationSettings.openai;
+            }
+            updateTranslationOverlay('翻译中，请稍后...', '', 15);
+            try {
+                const response = await fetch('/api/translate_batch', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.error || '翻译服务异常');
+                }
+                const translations = data.translations || [];
+                const totalChunks = queueSnapshot.length;
+                for (let i = 0; i < queueSnapshot.length; i++) {
+                    const chunk = queueSnapshot[i];
+                    const translated = translations[i] ?? chunk.text;
+                    if (chunk.type === 'block') {
+                        handleBlockTranslationResult(chunk, translated);
+                    } else {
+                        translationResults.push({
+                            label: chunk.label,
+                            text: normalizeTranslatedText(restoreMarkdownMathPlaceholders(translated))
+                        });
+                    }
+                    completedTranslationChunks += 1;
+                    const percent = Math.round((completedTranslationChunks / totalChunks) * 100);
+                    updateTranslationOverlay('翻译中，请稍后...', '', percent);
+                }
+                translationQueue = [];
+                finishTranslationQueue();
+            } catch (error) {
+                translationInProgress = false;
+                translationQueue = [];
+                translationResults = [];
+                completedTranslationChunks = 0;
+                blockTranslationBuffer = {};
+                hideTranslationOverlay();
+                showError(error.message || '翻译失败，请稍后再试');
+            }
+        }
+
+        function handleBlockTranslationResult(chunk, translated) {
+            const blockIndex = chunk.blockIndex;
+            if (blockIndex === undefined || blockIndex === null) return;
+            const totalParts = chunk.totalParts || 1;
+            const partIndex = chunk.partIndex || 1;
+            if (!blockTranslationBuffer[blockIndex]) {
+                blockTranslationBuffer[blockIndex] = {
+                    totalParts,
+                    receivedParts: 0,
+                    parts: new Array(totalParts).fill('')
+                };
+            }
+            const buffer = blockTranslationBuffer[blockIndex];
+            buffer.totalParts = totalParts;
+            buffer.parts[Math.max(0, partIndex - 1)] = (translated || '').trim();
+            buffer.receivedParts = Math.min(buffer.totalParts, (buffer.receivedParts || 0) + 1);
+            if (buffer.receivedParts >= buffer.totalParts) {
+                const finalText = buffer.parts.map(part => part || '').join('\n\n').trim() || translated;
+                const restored = restoreBlockMathPlaceholders(blockIndex, finalText || '');
+                applyTranslationToBlock(blockIndex, normalizeTranslatedText(restored || ''));
+                delete blockTranslationBuffer[blockIndex];
+            } else {
+                blockTranslationBuffer[blockIndex] = buffer;
+            }
+        }
+
+        function applyTranslationToBlock(index, translatedText) {
+            const item = contentList[index];
+            if (!item) return;
+            const cleanText = normalizeTranslatedText(translatedText);
+            item.translated_text = cleanText;
+            const block = contentViewer.querySelector(`.content-block[data-index="${index}"]`);
+            if (!block) return;
+            let textNode = block.querySelector('.content-text');
+            if (!textNode) {
+                block.querySelectorAll('ul').forEach(node => node.remove());
+                textNode = document.createElement('div');
+                textNode.className = 'content-text';
+                block.appendChild(textNode);
+            }
+            textNode.textContent = cleanText;
+            block.classList.add('translated');
+            renderMathInContainer(block);
+        }
+
+        function finishTranslationQueue() {
+            translationInProgress = false;
+            translationQueue = [];
+            const hasModalResults = translationResults.length > 0;
+            const summaryText = hasModalResults
+                ? `共处理 ${translationResults.length} 个片段`
+                : '所有段落已翻译完成';
+            updateTranslationOverlay('翻译完成', summaryText, 100);
+            if (hasModalResults) {
+            const content = translationResults.map(result =>
+                `${result.label}\n\n${result.text}`
+            ).join('\n\n');
+                openTranslationModal(`分页翻译（共${translationResults.length}段）`, content);
+            } else {
+                showToast('全文翻译完成，已替换提取内容');
+            }
+            translationResults = [];
+            completedTranslationChunks = 0;
+            blockTranslationBuffer = {};
+            markdownMathPlaceholders = [];
+            setTimeout(() => hideTranslationOverlay(), 500);
+        }
+
+        async function resumeExistingTask(taskId) {
+            if (!taskId) return;
+            currentTaskId = taskId;
+            loadingText.textContent = '正在恢复任务...';
+            loadingOverlay.classList.remove('hidden');
+            try {
+                const response = await fetch(`/api/task/${taskId}`);
+                const task = await response.json();
+                if (!response.ok) throw new Error(task.error || '任务状态获取失败');
+                if (task.status === 'completed') {
+                    loadResult();
+                } else if (task.status === 'failed') {
+                    showError(task.error || '任务失败');
+                } else {
+                    pollTaskStatus();
+                }
+            } catch (error) {
+                showError('恢复任务失败: ' + error.message);
+            }
+        }
+
+        function loadTranslationSettings() {
+            try {
+                const saved = JSON.parse(localStorage.getItem('translationSettings'));
+                if (saved) {
+                    translationSettings = {
+                        ...translationSettings,
+                        ...saved,
+                        openai: { ...translationSettings.openai, ...(saved.openai || {}) }
+                    };
+                }
+            } catch (error) {
+                console.warn('加载翻译设置失败', error);
+            }
+            updateSettingsForm();
+        }
+
+        function updateSettingsForm() {
+            providerRadios.forEach(radio => {
+                radio.checked = radio.value === translationSettings.provider;
+            });
+            sourceLangInput.value = translationSettings.source_lang || '';
+            targetLangInput.value = translationSettings.target_lang || '';
+            openaiUrlInput.value = translationSettings.openai.base_url || '';
+            openaiKeyInput.value = translationSettings.openai.api_key || '';
+            openaiModelInput.value = translationSettings.openai.model || '';
+            updateOpenAIFieldVisibility();
+        }
+
+        function updateOpenAIFieldVisibility() {
+            const selected = document.querySelector('input[name="provider"]:checked');
+            if (selected) {
+                openaiFields.style.display = selected.value === 'openai' ? 'block' : 'none';
+            }
+        }
+
+        function openSettingsModal() {
+            translationSettingsModal.classList.remove('hidden');
+        }
+
+        function closeSettingsModal() {
+            translationSettingsModal.classList.add('hidden');
+        }
+
+        function saveSettings() {
+            const provider = document.querySelector('input[name="provider"]:checked')?.value || 'deeplx';
+            translationSettings.provider = provider;
+            translationSettings.source_lang = (sourceLangInput.value || 'EN').trim().toUpperCase();
+            translationSettings.target_lang = (targetLangInput.value || 'ZH').trim().toUpperCase();
+            translationSettings.openai = {
+                base_url: openaiUrlInput.value.trim(),
+                api_key: openaiKeyInput.value.trim(),
+                model: openaiModelInput.value.trim()
+            };
+            localStorage.setItem('translationSettings', JSON.stringify(translationSettings));
+            showToast('翻译设置已保存');
+            closeSettingsModal();
+        }
+
+        async function requestTranslation(text) {
+            const payload = {
+                text,
+                provider: translationSettings.provider,
+                source_lang: translationSettings.source_lang,
+                target_lang: translationSettings.target_lang
+            };
+            if (translationSettings.provider === 'openai') {
+                payload.config = translationSettings.openai;
+            }
+            const response = await fetch('/api/translate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data.error || '翻译服务异常');
+            }
+            return data.translated_text || text;
+        }
+
+        function openTranslationModal(title, text) {
+            translationModalTitle.textContent = title;
+            translationModalText.value = text;
+            translationModal.classList.remove('hidden');
+        }
+
+        function closeTranslationModal() {
+            translationModal.classList.add('hidden');
+        }
+
+        async function copyTranslationResult() {
+            if (!translationModalText.value) return;
+            try {
+                await navigator.clipboard.writeText(translationModalText.value);
+                showToast('翻译结果已复制');
+            } catch (error) {
+                showToast('复制失败');
+            }
+        }
+
+        function showLoadingMessage(message) {
+            loadingText.textContent = message;
+            progressFill.style.width = '65%';
+            loadingOverlay.classList.remove('hidden');
+        }
+
+        function hideLoadingMessage() {
+            loadingOverlay.classList.add('hidden');
+        }
+
+        function showToast(message) {
+            if (!toastEl) return;
+            toastEl.textContent = message;
+            toastEl.classList.add('show');
+            setTimeout(() => toastEl.classList.remove('show'), 2000);
+        }
+
+        function showTranslationOverlay(title, detail) {
+            if (!translationOverlay) return;
+            translationOverlayText.textContent = title || '翻译中，请稍后...';
+            translationOverlayDetail.textContent = detail || '';
+            translationOverlayBar.style.width = '5%';
+            translationOverlay.classList.remove('hidden');
+        }
+
+        function updateTranslationOverlay(title, detail, percent) {
+            if (!translationOverlay) return;
+            if (title) translationOverlayText.textContent = title;
+            if (detail) translationOverlayDetail.textContent = detail;
+            if (typeof percent === 'number') {
+                const clamped = Math.max(5, Math.min(100, percent));
+                translationOverlayBar.style.width = clamped + '%';
+            }
+        }
+
+        function hideTranslationOverlay() {
+            if (!translationOverlay) return;
+            translationOverlay.classList.add('hidden');
+            translationOverlayBar.style.width = '0%';
+            translationOverlayDetail.textContent = '';
+        }
+
+        function delay(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+
+        function showError(message) {
+            loadingOverlay.classList.add('hidden');
+            alert('错误: ' + message);
+        }
+
+        async function downloadTranslatedPdf() {
+            if (!currentTaskId) {
+                showToast('请先上传并解析文档');
+                return;
+            }
+            if (translationInProgress || inlineTranslationInProgress) {
+                showToast('翻译进行中，请稍后再下载');
+                return;
+            }
+
+            showLoadingMessage('正在生成PDF...');
+
+            try {
+                const response = await fetch(`/api/download_pdf/${currentTaskId}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ content_list: contentList })
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || 'PDF生成失败');
+                }
+
+                // 下载文件
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `translated_${currentTaskId}.pdf`;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+
+                hideLoadingMessage();
+                showToast('PDF下载成功');
+            } catch (error) {
+                hideLoadingMessage();
+                showError(error.message || 'PDF下载失败');
+            }
+        }
+
+        // 分隔条拖拽
+        const resizer = document.getElementById('resizer');
+        let isResizing = false;
+        resizer.addEventListener('mousedown', () => { isResizing = true; document.body.style.cursor = 'col-resize'; });
+        document.addEventListener('mousemove', (e) => {
+            if (!isResizing) return;
+            const pdfPanel = document.getElementById('pdfPanel');
+            const contentPanel = document.getElementById('contentPanel');
+            const newWidth = e.clientX;
+            if (newWidth > 200 && newWidth < window.innerWidth - 200) {
+                pdfPanel.style.width = newWidth + 'px';
+                contentPanel.style.width = (window.innerWidth - newWidth - 4) + 'px';
+            }
+        });
+        document.addEventListener('mouseup', () => { isResizing = false; document.body.style.cursor = 'default'; });
+    </script>
+</body>
+</html>

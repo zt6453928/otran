@@ -1,0 +1,8 @@
+requests
+requests-toolbelt
+PyMuPDF
+Pillow
+flask
+flask-cors
+reportlab
+gunicorn

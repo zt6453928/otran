@@ -1,0 +1,23 @@
+{
+  "$schema": "https://schema.zeabur.app/template.json",
+  "name": "PDF Document Parser",
+  "description": "PDF文档解析与翻译工具",
+  "build": {
+    "type": "python"
+  },
+  "start_command": "gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 300",
+  "env": {
+    "MINERU_API_URL": {
+      "description": "MinerU API URL",
+      "default": "https://mineru.net/api/v4/extract/task"
+    },
+    "MINERU_API_TOKEN": {
+      "description": "MinerU API Token",
+      "required": true
+    },
+    "DEEPLX_API_URL": {
+      "description": "DeepLX API URL",
+      "required": true
+    }
+  }
+}
