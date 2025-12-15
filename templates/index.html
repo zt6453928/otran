@@ -1262,7 +1262,14 @@
             try {
                 const response = await fetch(`/api/task/${taskId}`);
                 const task = await response.json();
-                if (!response.ok) throw new Error(task.error || '任务状态获取失败');
+                if (!response.ok) {
+                    // 任务不存在时，清除URL参数并隐藏加载界面，让用户重新上传
+                    window.history.replaceState({}, document.title, window.location.pathname);
+                    loadingOverlay.classList.add('hidden');
+                    currentTaskId = null;
+                    console.log('任务已过期，请重新上传文件');
+                    return;
+                }
                 if (task.status === 'completed') {
                     loadResult();
                 } else if (task.status === 'failed') {
@@ -1271,7 +1278,11 @@
                     pollTaskStatus();
                 }
             } catch (error) {
-                showError('恢复任务失败: ' + error.message);
+                // 网络错误等情况，清除URL参数
+                window.history.replaceState({}, document.title, window.location.pathname);
+                loadingOverlay.classList.add('hidden');
+                currentTaskId = null;
+                console.log('恢复任务失败: ' + error.message);
             }
         }
 
