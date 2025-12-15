@@ -87,6 +87,14 @@ class DocumentParser:
         }
 
         response = requests.post(url, headers=self.headers, json=payload)
+
+        # 添加调试信息
+        print(f"API响应状态码: {response.status_code}")
+        print(f"API响应内容: {response.text[:500] if response.text else '(空)'}")
+
+        if not response.text:
+            raise ValueError(f"MinerU API返回空响应，请检查MINERU_API_TOKEN是否正确配置。当前Token: {MINERU_API_TOKEN[:20] if MINERU_API_TOKEN else '(未设置)'}...")
+
         result = response.json()
 
         print(f"申请上传URL响应: code={result.get('code')}, msg={result.get('msg')}")
