@@ -72,7 +72,7 @@ def process_parse(task_id: str, input_path: str):
         task.progress = 90
         task.message = "处理完成"
         task.result = result
-        task.pdf_path = input_path
+        task.pdf_path = None  # 不再保存PDF路径
         output_json = os.path.join(OUTPUT_FOLDER, f"{task_id}_content.json")
         with open(output_json, 'w', encoding='utf-8') as f:
             json.dump({
@@ -89,6 +89,14 @@ def process_parse(task_id: str, input_path: str):
         task.message = f"处理失败: {str(e)}"
         import traceback
         traceback.print_exc()
+    finally:
+        # 解析完成后删除上传的文件以节省存储空间
+        if os.path.exists(input_path):
+            try:
+                os.remove(input_path)
+                print(f"✓ 已删除上传文件: {input_path}")
+            except Exception as e:
+                print(f"⚠️ 删除文件失败: {e}")
 
 
 def translate_via_deeplx(text: str, source_lang: str, target_lang: str) -> str:
@@ -223,7 +231,6 @@ def parse():
     input_path = os.path.join(UPLOAD_FOLDER, filename)
     file.save(input_path)
     task = ParseTask(task_id, file.filename)
-    task.pdf_path = input_path
     tasks[task_id] = task
     thread = threading.Thread(target=process_parse, args=(task_id, input_path))
     thread.daemon = True
@@ -258,9 +265,8 @@ def get_pdf(task_id):
     task = tasks.get(task_id)
     if not task:
         return jsonify({"error": "任务不存在"}), 404
-    if not task.pdf_path or not os.path.exists(task.pdf_path):
-        return jsonify({"error": "PDF文件不存在"}), 404
-    return send_file(task.pdf_path, mimetype='application/pdf')
+    # 原始PDF文件在解析后已被删除以节省存储空间
+    return jsonify({"error": "原始PDF文件已被清理，请使用下载译文PDF功能"}), 404
 
 
 @app.route('/api/image/<task_id>/<image_name>')
