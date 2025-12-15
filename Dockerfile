@@ -18,5 +18,5 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . ./
 COPY --from=frontend-build /app/frontend/dist /app/frontend/dist
 
-CMD ["sh", "-c", "gunicorn app:app --bind 0.0.0.0:${PORT} --workers 2 --timeout 300"]
+CMD ["sh", "-c", "gunicorn app:app --bind 0.0.0.0:${PORT} --workers 1 --threads 4 --timeout 300"]
 
