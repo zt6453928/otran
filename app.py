@@ -7,6 +7,7 @@ import uuid
 import threading
 import json
 import base64
+import shutil
 import requests
 from datetime import datetime
 from pathlib import Path
@@ -127,7 +128,12 @@ def process_parse(task_id: str, input_path: str):
         task.progress = 90
         task.message = "处理完成"
         task.result = result
-        task.pdf_path = input_path  # 保留PDF路径用于预览
+        # 将PDF复制到outputs目录，使用固定命名便于查找
+        task_output_dir = os.path.join(OUTPUT_FOLDER, task_id)
+        os.makedirs(task_output_dir, exist_ok=True)
+        pdf_dest = os.path.join(task_output_dir, "original.pdf")
+        shutil.copy2(input_path, pdf_dest)
+        task.pdf_path = pdf_dest
         task.status = "completed"
         task.progress = 100
         task.message = "解析完成!"
@@ -309,18 +315,18 @@ def get_result(task_id):
 
 @app.route('/api/pdf/<task_id>')
 def get_pdf(task_id):
+    # 优先从任务对象获取
     task = tasks.get(task_id)
-    if not task:
-        print(f"⚠️ PDF请求失败: 任务 {task_id} 不存在")
-        return jsonify({"error": "任务不存在"}), 404
-    if not task.pdf_path:
-        print(f"⚠️ PDF请求失败: 任务 {task_id} 没有PDF路径")
-        return jsonify({"error": "PDF文件路径不存在"}), 404
-    if not os.path.exists(task.pdf_path):
-        print(f"⚠️ PDF请求失败: 文件不存在 {task.pdf_path}")
-        return jsonify({"error": "PDF文件不存在"}), 404
-    print(f"✓ 返回PDF文件: {task.pdf_path}")
-    return send_file(task.pdf_path, mimetype='application/pdf')
+    if task and task.pdf_path and os.path.exists(task.pdf_path):
+        print(f"✓ 返回PDF文件(从任务): {task.pdf_path}")
+        return send_file(task.pdf_path, mimetype='application/pdf')
+    # 任务对象不存在时，尝试从outputs目录查找
+    pdf_path = os.path.join(OUTPUT_FOLDER, task_id, "original.pdf")
+    if os.path.exists(pdf_path):
+        print(f"✓ 返回PDF文件(从outputs): {pdf_path}")
+        return send_file(pdf_path, mimetype='application/pdf')
+    print(f"⚠️ PDF请求失败: 任务 {task_id} 的PDF文件不存在")
+    return jsonify({"error": "PDF文件不存在"}), 404
 
 
 @app.route('/api/image/<task_id>/<image_name>')
