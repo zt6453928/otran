@@ -32,6 +32,61 @@ os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 tasks = {}
 DEEPLX_MAX_CONCURRENCY = int(os.environ.get("DEEPLX_MAX_CONCURRENCY", "4"))
 
+# 文件清理配置（秒）
+FILE_MAX_AGE = 24 * 60 * 60  # 24小时
+
+
+def cleanup_old_files():
+    """清理超过24小时的上传文件和输出文件"""
+    import time
+    current_time = time.time()
+    cleaned_count = 0
+
+    # 清理uploads目录
+    if os.path.exists(UPLOAD_FOLDER):
+        for filename in os.listdir(UPLOAD_FOLDER):
+            filepath = os.path.join(UPLOAD_FOLDER, filename)
+            if os.path.isfile(filepath):
+                file_age = current_time - os.path.getmtime(filepath)
+                if file_age > FILE_MAX_AGE:
+                    try:
+                        os.remove(filepath)
+                        cleaned_count += 1
+                        print(f"✓ 清理旧文件: {filename}")
+                    except Exception as e:
+                        print(f"⚠️ 清理文件失败 {filename}: {e}")
+
+    # 清理outputs目录
+    if os.path.exists(OUTPUT_FOLDER):
+        for filename in os.listdir(OUTPUT_FOLDER):
+            filepath = os.path.join(OUTPUT_FOLDER, filename)
+            if os.path.isfile(filepath):
+                file_age = current_time - os.path.getmtime(filepath)
+                if file_age > FILE_MAX_AGE:
+                    try:
+                        os.remove(filepath)
+                        cleaned_count += 1
+                        print(f"✓ 清理旧文件: {filename}")
+                    except Exception as e:
+                        print(f"⚠️ 清理文件失败 {filename}: {e}")
+
+    if cleaned_count > 0:
+        print(f"✅ 共清理 {cleaned_count} 个过期文件")
+
+
+def start_cleanup_scheduler():
+    """启动定时清理任务"""
+    import time
+
+    def cleanup_loop():
+        while True:
+            time.sleep(3600)  # 每小时检查一次
+            cleanup_old_files()
+
+    cleanup_thread = threading.Thread(target=cleanup_loop, daemon=True)
+    cleanup_thread.start()
+    print("🧹 文件清理服务已启动（每小时检查，清理超过24小时的文件）")
+
 
 class ParseTask:
     def __init__(self, task_id: str, filename: str):
@@ -383,6 +438,11 @@ def download_translated_pdf(task_id):
         import traceback
         traceback.print_exc()
         return jsonify({"error": f"PDF生成失败: {str(e)}"}), 500
+
+
+# 启动时执行一次清理并启动定时清理服务
+cleanup_old_files()
+start_cleanup_scheduler()
 
 
 if __name__ == '__main__':
