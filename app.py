@@ -72,8 +72,7 @@ def process_parse(task_id: str, input_path: str):
         task.progress = 90
         task.message = "处理完成"
         task.result = result
-        task.pdf_path = None  # 不再保存PDF路径
-        # 不再保存JSON文件到磁盘，结果已在内存中
+        task.pdf_path = input_path  # 保留PDF路径用于预览
         task.status = "completed"
         task.progress = 100
         task.message = "解析完成!"
@@ -83,14 +82,13 @@ def process_parse(task_id: str, input_path: str):
         task.message = f"处理失败: {str(e)}"
         import traceback
         traceback.print_exc()
-    finally:
-        # 解析完成后删除上传的文件以节省存储空间
+        # 解析失败时删除上传的文件
         if os.path.exists(input_path):
             try:
                 os.remove(input_path)
                 print(f"✓ 已删除上传文件: {input_path}")
-            except Exception as e:
-                print(f"⚠️ 删除文件失败: {e}")
+            except Exception as e2:
+                print(f"⚠️ 删除文件失败: {e2}")
 
 
 def translate_via_deeplx(text: str, source_lang: str, target_lang: str) -> str:
@@ -259,8 +257,9 @@ def get_pdf(task_id):
     task = tasks.get(task_id)
     if not task:
         return jsonify({"error": "任务不存在"}), 404
-    # 原始PDF文件在解析后已被删除以节省存储空间
-    return jsonify({"error": "原始PDF文件已被清理，请使用下载译文PDF功能"}), 404
+    if not task.pdf_path or not os.path.exists(task.pdf_path):
+        return jsonify({"error": "PDF文件不存在"}), 404
+    return send_file(task.pdf_path, mimetype='application/pdf')
 
 
 @app.route('/api/image/<task_id>/<image_name>')
