@@ -311,9 +311,15 @@ def get_result(task_id):
 def get_pdf(task_id):
     task = tasks.get(task_id)
     if not task:
+        print(f"⚠️ PDF请求失败: 任务 {task_id} 不存在")
         return jsonify({"error": "任务不存在"}), 404
-    if not task.pdf_path or not os.path.exists(task.pdf_path):
+    if not task.pdf_path:
+        print(f"⚠️ PDF请求失败: 任务 {task_id} 没有PDF路径")
+        return jsonify({"error": "PDF文件路径不存在"}), 404
+    if not os.path.exists(task.pdf_path):
+        print(f"⚠️ PDF请求失败: 文件不存在 {task.pdf_path}")
         return jsonify({"error": "PDF文件不存在"}), 404
+    print(f"✓ 返回PDF文件: {task.pdf_path}")
     return send_file(task.pdf_path, mimetype='application/pdf')
 
 

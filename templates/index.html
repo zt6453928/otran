@@ -419,8 +419,13 @@
                 pageMappings = resultData.page_mappings || {};
                 renderContentBlocks(resultData.markdown);
                 const pdfResponse = await fetch(`/api/pdf/${currentTaskId}`);
-                const pdfBlob = await pdfResponse.blob();
-                await loadPDF(URL.createObjectURL(pdfBlob));
+                if (!pdfResponse.ok) {
+                    console.warn('PDF预览不可用');
+                    document.getElementById('pdfPanel').innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#666;">PDF预览不可用</div>';
+                } else {
+                    const pdfBlob = await pdfResponse.blob();
+                    await loadPDF(URL.createObjectURL(pdfBlob));
+                }
                 uploadContainer.style.display = 'none';
                 mainContainer.classList.add('active');
                 loadingOverlay.classList.add('hidden');
