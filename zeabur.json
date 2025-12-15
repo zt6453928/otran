@@ -5,7 +5,7 @@
   "build": {
     "type": "python"
   },
-  "start_command": "gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 300",
+  "start_command": "gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 300",
   "env": {
     "MINERU_API_URL": {
       "description": "MinerU API URL",
