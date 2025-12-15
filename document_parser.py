@@ -86,14 +86,19 @@ class DocumentParser:
             "model_version": "vlm"
         }
 
+        import sys
+        print(f"🔑 当前Token: {MINERU_API_TOKEN[:30] if MINERU_API_TOKEN else '(未设置)'}...", flush=True)
+        sys.stdout.flush()
+
         response = requests.post(url, headers=self.headers, json=payload)
 
         # 添加调试信息
-        print(f"API响应状态码: {response.status_code}")
-        print(f"API响应内容: {response.text[:500] if response.text else '(空)'}")
+        print(f"API响应状态码: {response.status_code}", flush=True)
+        print(f"API响应内容: {response.text[:500] if response.text else '(空)'}", flush=True)
+        sys.stdout.flush()
 
         if not response.text:
-            raise ValueError(f"MinerU API返回空响应，请检查MINERU_API_TOKEN是否正确配置。当前Token: {MINERU_API_TOKEN[:20] if MINERU_API_TOKEN else '(未设置)'}...")
+            raise ValueError(f"MinerU API返回空响应，状态码: {response.status_code}。请检查MINERU_API_TOKEN是否正确。")
 
         result = response.json()
 
