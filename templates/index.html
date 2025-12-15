@@ -377,6 +377,9 @@
         const initialTaskId = urlParams.get('task_id');
         if (initialTaskId) {
             (async () => {
+                loadingOverlay.classList.remove('hidden');
+                loadingText.textContent = '正在加载任务...';
+                progressFill.style.width = '50%';
                 try {
                     const response = await fetch(`/api/task/${initialTaskId}`);
                     if (response.ok) {
@@ -386,11 +389,13 @@
                             loadResult();
                             return;
                         } else if (task.status === 'failed') {
+                            loadingOverlay.classList.add('hidden');
                             showError(task.error || '任务失败');
+                            window.history.replaceState({}, document.title, window.location.pathname);
+                            return;
                         } else {
                             // 任务还在进行中，开始轮询
                             currentTaskId = initialTaskId;
-                            loadingOverlay.classList.remove('hidden');
                             loadingText.textContent = task.message || '处理中...';
                             progressFill.style.width = (task.progress || 0) + '%';
                             pollTaskStatus();
@@ -398,9 +403,10 @@
                         }
                     }
                 } catch (e) {
-                    console.log('任务不存在或已过期');
+                    console.log('任务加载失败:', e);
                 }
-                // 任务不存在或失败，清除URL参数
+                // 任务不存在，清除URL参数并显示上传界面
+                loadingOverlay.classList.add('hidden');
                 window.history.replaceState({}, document.title, window.location.pathname);
             })();
         }
