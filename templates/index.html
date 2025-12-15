@@ -418,9 +418,11 @@
                 contentList = resultData.content_list || [];
                 pageMappings = resultData.page_mappings || {};
                 renderContentBlocks(resultData.markdown);
-                const pdfResponse = await fetch(`/api/pdf/${currentTaskId}`);
-                const pdfBlob = await pdfResponse.blob();
-                await loadPDF(URL.createObjectURL(pdfBlob));
+                // PDF预览已禁用（原始文件在解析后被删除以节省存储空间）
+                // 隐藏PDF面板，只显示内容面板
+                document.getElementById('pdfPanel').style.display = 'none';
+                document.getElementById('resizer').style.display = 'none';
+                document.getElementById('contentPanel').style.width = '100%';
                 uploadContainer.style.display = 'none';
                 mainContainer.classList.add('active');
                 loadingOverlay.classList.add('hidden');
