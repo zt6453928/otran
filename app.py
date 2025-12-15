@@ -13,7 +13,7 @@ from pathlib import Path
 from io import BytesIO
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from flask import Flask, request, jsonify, send_file, send_from_directory, render_template
+from flask import Flask, request, jsonify, send_file, send_from_directory, render_template, after_this_request
 from flask_cors import CORS
 
 from document_parser import DocumentParser
@@ -73,13 +73,7 @@ def process_parse(task_id: str, input_path: str):
         task.message = "处理完成"
         task.result = result
         task.pdf_path = None  # 不再保存PDF路径
-        output_json = os.path.join(OUTPUT_FOLDER, f"{task_id}_content.json")
-        with open(output_json, 'w', encoding='utf-8') as f:
-            json.dump({
-                "markdown": result.get("markdown", ""),
-                "content_list": result.get("content_list", []),
-                "page_mappings": result.get("page_mappings", {})
-            }, f, ensure_ascii=False, indent=2)
+        # 不再保存JSON文件到磁盘，结果已在内存中
         task.status = "completed"
         task.progress = 100
         task.message = "解析完成!"
@@ -368,6 +362,17 @@ def download_translated_pdf(task_id):
             task_id=task_id,
             get_image_func=get_image_data
         )
+
+        # 在响应完成后删除生成的PDF文件
+        @after_this_request
+        def cleanup(response):
+            try:
+                if os.path.exists(output_path):
+                    os.remove(output_path)
+                    print(f"✓ 已删除临时PDF: {output_path}")
+            except Exception as e:
+                print(f"⚠️ 删除临时PDF失败: {e}")
+            return response
 
         return send_file(
             output_path,
