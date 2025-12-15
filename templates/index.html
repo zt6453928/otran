@@ -372,9 +372,37 @@
                 }
             });
         }
-        // 清除URL中可能存在的task_id参数，确保每次都是新上传
-        if (window.location.search) {
-            window.history.replaceState({}, document.title, window.location.pathname);
+        // 检查URL中是否有task_id参数，如果有则尝试加载结果
+        const urlParams = new URLSearchParams(window.location.search);
+        const initialTaskId = urlParams.get('task_id');
+        if (initialTaskId) {
+            (async () => {
+                try {
+                    const response = await fetch(`/api/task/${initialTaskId}`);
+                    if (response.ok) {
+                        const task = await response.json();
+                        if (task.status === 'completed') {
+                            currentTaskId = initialTaskId;
+                            loadResult();
+                            return;
+                        } else if (task.status === 'failed') {
+                            showError(task.error || '任务失败');
+                        } else {
+                            // 任务还在进行中，开始轮询
+                            currentTaskId = initialTaskId;
+                            loadingOverlay.classList.remove('hidden');
+                            loadingText.textContent = task.message || '处理中...';
+                            progressFill.style.width = (task.progress || 0) + '%';
+                            pollTaskStatus();
+                            return;
+                        }
+                    }
+                } catch (e) {
+                    console.log('任务不存在或已过期');
+                }
+                // 任务不存在或失败，清除URL参数
+                window.history.replaceState({}, document.title, window.location.pathname);
+            })();
         }
 
         fileInput.addEventListener('change', async (e) => {

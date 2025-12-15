@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
-import { Menu, Paperclip, Link as LinkIcon, Info, FileText, FileImage, FileType, Loader2, AlertTriangle } from 'lucide-react'
+import { useEffect, useRef, useState, useCallback } from 'react'
+import { Menu, Paperclip, Link as LinkIcon, Info, FileText, FileImage, FileType, Loader2, AlertTriangle, CheckCircle } from 'lucide-react'
 
 const TerminalLogo = () => {
   const sequences = [
@@ -77,7 +77,11 @@ function App() {
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const [fileName, setFileName] = useState('')
+  const [taskId, setTaskId] = useState(null)
+  const [progress, setProgress] = useState(0)
+  const [taskStatus, setTaskStatus] = useState(null) // 'polling', 'completed', 'failed'
   const fileInputRef = useRef(null)
+  const pollingRef = useRef(null)
 
   const handleLocalClick = () => fileInputRef.current?.click()
 
@@ -98,11 +102,69 @@ function App() {
     }
   }
 
+  // 轮询任务状态
+  const pollTaskStatus = useCallback((id) => {
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current)
+    }
+    setTaskStatus('polling')
+    pollingRef.current = setInterval(async () => {
+      try {
+        const response = await fetch(`/api/task/${id}`)
+        const task = await response.json()
+        if (!response.ok) {
+          clearInterval(pollingRef.current)
+          setTaskStatus('failed')
+          setError(task.error || '任务状态获取失败')
+          setUploading(false)
+          return
+        }
+        setMessage(task.message || '处理中...')
+        setProgress(task.progress || 0)
+        if (task.status === 'completed') {
+          clearInterval(pollingRef.current)
+          setTaskStatus('completed')
+          setMessage('解析完成！正在跳转到查看器...')
+          setUploading(false)
+          // 跳转到 viewer 页面，不带 task_id，让用户在那里查看
+          setTimeout(() => {
+            const targetUrl = new URL(window.location.href)
+            if (targetUrl.port === '5173') {
+              targetUrl.port = '8080'
+            }
+            targetUrl.pathname = '/viewer'
+            targetUrl.search = `?task_id=${id}`
+            window.location.href = targetUrl.toString()
+          }, 1000)
+        } else if (task.status === 'failed') {
+          clearInterval(pollingRef.current)
+          setTaskStatus('failed')
+          setError(task.error || '解析失败')
+          setUploading(false)
+        }
+      } catch (err) {
+        console.error('Polling error:', err)
+      }
+    }, 2000)
+  }, [])
+
+  // 清理轮询
+  useEffect(() => {
+    return () => {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current)
+      }
+    }
+  }, [])
+
   const uploadFile = async (file) => {
     setError('')
     setMessage('正在上传文件...')
     setUploading(true)
     setFileName(file.name)
+    setProgress(0)
+    setTaskStatus(null)
+    setTaskId(null)
     try {
       const formData = new FormData()
       formData.append('file', file)
@@ -115,21 +177,16 @@ function App() {
         throw new Error(data.error || '上传失败')
       }
       if (data.task_id) {
-        setMessage('上传成功，正在跳转...')
-        const targetUrl = new URL(window.location.href)
-        if (targetUrl.port === '5173') {
-          targetUrl.port = '8080'
-        }
-        targetUrl.pathname = '/viewer'
-        targetUrl.search = `?task_id=${data.task_id}`
-        window.location.href = targetUrl.toString()
+        setTaskId(data.task_id)
+        setMessage('上传成功，正在解析文档...')
+        setProgress(10)
+        pollTaskStatus(data.task_id)
       } else {
         throw new Error('未能获取任务ID')
       }
     } catch (err) {
       setError(err.message)
       setMessage('')
-    } finally {
       setUploading(false)
     }
   }
@@ -214,14 +271,28 @@ function App() {
 
         {(message || error) && (
           <div className="mt-6 w-full max-w-3xl">
-            <div className="bg-white/80 border border-slate-200 rounded-2xl p-4 shadow-sm flex items-center gap-3 text-sm text-slate-600">
-              {uploading && <Loader2 className="w-5 h-5 text-blue-500 animate-spin" />}
-              {error && !uploading && <AlertTriangle className="w-5 h-5 text-red-500" />}
-              <div>
-                {message && <p className="text-slate-700">{message}</p>}
-                {fileName && <p className="text-slate-400 mt-1">文件：{fileName}</p>}
-                {error && <p className="text-red-500 mt-1">{error}</p>}
+            <div className="bg-white/80 border border-slate-200 rounded-2xl p-4 shadow-sm text-sm text-slate-600">
+              <div className="flex items-center gap-3">
+                {uploading && <Loader2 className="w-5 h-5 text-blue-500 animate-spin flex-shrink-0" />}
+                {taskStatus === 'completed' && <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" />}
+                {error && !uploading && <AlertTriangle className="w-5 h-5 text-red-500 flex-shrink-0" />}
+                <div className="flex-1">
+                  {message && <p className="text-slate-700">{message}</p>}
+                  {fileName && <p className="text-slate-400 mt-1">文件：{fileName}</p>}
+                  {error && <p className="text-red-500 mt-1">{error}</p>}
+                </div>
               </div>
+              {uploading && progress > 0 && (
+                <div className="mt-3">
+                  <div className="w-full bg-slate-200 rounded-full h-2">
+                    <div
+                      className="bg-blue-500 h-2 rounded-full transition-all duration-300"
+                      style={{ width: `${progress}%` }}
+                    ></div>
+                  </div>
+                  <p className="text-slate-400 text-xs mt-1 text-right">{progress}%</p>
+                </div>
+              )}
             </div>
           </div>
         )}
