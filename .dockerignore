@@ -1,0 +1,11 @@
+.git
+.claude
+venv
+__pycache__
+*.pyc
+flask.log
+outputs
+uploads
+frontend/node_modules
+frontend/dist
+
