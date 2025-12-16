@@ -1,5 +1,56 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { Menu, Paperclip, Link as LinkIcon, Info, FileText, FileImage, FileType, Loader2, AlertTriangle, CheckCircle } from 'lucide-react'
+import { Menu, Paperclip, Link as LinkIcon, Info, FileText, FileImage, FileType, Loader2, AlertTriangle, CheckCircle, Mail, X } from 'lucide-react'
+
+const ContactModal = ({ isOpen, onClose }) => {
+  if (!isOpen) return null
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md mx-4 relative" onClick={(e) => e.stopPropagation()}>
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 p-2 hover:bg-slate-100 rounded-lg transition-colors"
+        >
+          <X className="w-5 h-5 text-slate-500" />
+        </button>
+
+        <div className="text-center mb-6">
+          <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Mail className="w-8 h-8 text-white" />
+          </div>
+          <h2 className="text-2xl font-bold text-slate-900 mb-2">联系方式</h2>
+          <p className="text-slate-500 text-sm">欢迎与我交流</p>
+        </div>
+
+        <div className="space-y-4">
+          <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                <Mail className="w-5 h-5 text-blue-600" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs text-slate-500 mb-1">邮箱地址</p>
+                <a
+                  href="mailto:zyc0305@linux.do"
+                  className="text-slate-900 font-medium hover:text-blue-600 transition-colors break-all"
+                >
+                  zyc0305@linux.do
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <button
+          onClick={onClose}
+          className="mt-6 w-full py-3 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-xl font-medium hover:shadow-lg transition-all"
+        >
+          关闭
+        </button>
+      </div>
+    </div>
+  )
+}
 
 const UploadingOverlay = ({ message, progress, fileName }) => {
   return (
@@ -140,6 +191,7 @@ function App() {
   const [taskId, setTaskId] = useState(null)
   const [progress, setProgress] = useState(0)
   const [taskStatus, setTaskStatus] = useState(null) // 'polling', 'completed', 'failed'
+  const [isContactModalOpen, setIsContactModalOpen] = useState(false)
   const fileInputRef = useRef(null)
   const pollingRef = useRef(null)
 
@@ -253,13 +305,17 @@ function App() {
 
   return (
     <div className="min-h-screen bg-white font-sans text-slate-900 selection:bg-blue-100 relative overflow-hidden">
+      <ContactModal isOpen={isContactModalOpen} onClose={() => setIsContactModalOpen(false)} />
       {(uploading || taskStatus === 'polling') && (
         <UploadingOverlay message={message || '正在处理...'} progress={progress} fileName={fileName} />
       )}
       <div className="absolute inset-0 z-0 h-full w-full bg-white bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] [background-size:20px_20px] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)] pointer-events-none"></div>
       <header className="relative z-10 flex items-center justify-between px-6 py-4 md:px-8">
         <div className="flex items-center gap-4">
-          <button className="p-2 hover:bg-slate-100 rounded-lg transition-colors">
+          <button
+            onClick={() => setIsContactModalOpen(true)}
+            className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
+          >
             <Menu className="w-6 h-6 text-slate-700" />
           </button>
           <div className="flex items-center gap-3 cursor-pointer">
