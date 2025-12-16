@@ -1,6 +1,66 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { Menu, Paperclip, Link as LinkIcon, Info, FileText, FileImage, FileType, Loader2, AlertTriangle, CheckCircle } from 'lucide-react'
 
+const UploadingOverlay = ({ message, progress, fileName }) => {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-br from-slate-900 via-indigo-900 to-slate-900 text-slate-100">
+      <style>{`
+        @keyframes jump {
+          0% { transform: translateY(0) scale(1.1, 0.9); }
+          10% { transform: translateY(0) scale(0.9, 1.1); }
+          50% { transform: translateY(-40px) scale(1); }
+          90% { transform: translateY(0) scale(0.9, 1.1); }
+          100% { transform: translateY(0) scale(1.1, 0.9); }
+        }
+        @keyframes shadow-breath {
+          0%, 100% { transform: scale(1); opacity: 0.5; }
+          50% { transform: scale(0.5); opacity: 0.2; }
+        }
+        @keyframes slide-line {
+          0% { background-position: 0 0; }
+          100% { background-position: -20px 0; }
+        }
+        .animate-jump { animation: jump 0.8s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite; transform-origin: bottom; }
+        .animate-shadow { animation: shadow-breath 0.8s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite; }
+        .animate-slide-line { animation: slide-line 0.4s linear infinite; }
+      `}</style>
+      <div className="flex flex-col items-center w-[320px] max-w-[92vw] text-center gap-2">
+        <div className="relative">
+          <svg
+            className="w-[70px] h-[70px] text-white animate-jump drop-shadow-[0_0_12px_rgba(255,255,255,0.35)]"
+            viewBox="0 0 100 100"
+            fill="currentColor"
+            stroke="currentColor"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path
+              d="M 20 75 C 20 75, 40 85, 55 65 C 70 45, 45 35, 45 35 C 45 35, 75 25, 85 55"
+              strokeWidth="8"
+              fill="none"
+            />
+            <circle cx="85" cy="25" r="7" stroke="none" fill="currentColor" />
+          </svg>
+        </div>
+        <div className="w-[44px] h-[5px] bg-black/60 rounded-full -mt-1 mb-2 animate-shadow blur-[1px]"></div>
+        <div
+          className="w-full h-[5px] rounded-sm animate-slide-line bg-repeat-x opacity-70"
+          style={{ backgroundImage: 'linear-gradient(to right, #e2e8f0 50%, transparent 50%)', backgroundSize: '20px 100%' }}
+        ></div>
+        <div className="mt-4 text-slate-200 text-sm font-medium tracking-wide">
+          {message || '文件上传中...'}
+        </div>
+        {fileName && <div className="text-slate-400 text-xs">{fileName}</div>}
+        {typeof progress === 'number' && progress > 0 && (
+          <div className="w-full text-left text-xs text-slate-300">
+            进度：{progress}%
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 const TerminalLogo = () => {
   const sequences = [
     { char: '<', color: '#2563eb' },
@@ -193,6 +253,9 @@ function App() {
 
   return (
     <div className="min-h-screen bg-white font-sans text-slate-900 selection:bg-blue-100 relative overflow-hidden">
+      {(uploading || taskStatus === 'polling') && (
+        <UploadingOverlay message={message || '正在处理...'} progress={progress} fileName={fileName} />
+      )}
       <div className="absolute inset-0 z-0 h-full w-full bg-white bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] [background-size:20px_20px] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)] pointer-events-none"></div>
       <header className="relative z-10 flex items-center justify-between px-6 py-4 md:px-8">
         <div className="flex items-center gap-4">

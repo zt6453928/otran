@@ -10,6 +10,7 @@ import base64
 import shutil
 import time
 import requests
+from requests.adapters import HTTPAdapter
 from datetime import datetime
 from pathlib import Path
 from io import BytesIO
@@ -35,7 +36,16 @@ tasks = {}
 DEEPLX_MAX_CONCURRENCY = int(os.environ.get("DEEPLX_MAX_CONCURRENCY", "4"))
 DEEPLX_TIMEOUT = float(os.environ.get("DEEPLX_TIMEOUT", "30"))
 DEEPLX_MAX_RETRIES = int(os.environ.get("DEEPLX_MAX_RETRIES", "2"))
-DEEPLX_RATE_LIMIT = float(os.environ.get("DEEPLX_RATE_LIMIT", "0"))
+DEEPLX_RATE_LIMIT = float(os.environ.get("DEEPLX_RATE_LIMIT", "0.3"))
+DEEPLX_HEALTH_TTL = float(os.environ.get("DEEPLX_HEALTH_TTL", "60"))
+DEEPLX_CONNECTION_POOL = int(os.environ.get("DEEPLX_CONNECTION_POOL", str(DEEPLX_MAX_CONCURRENCY * 4)))
+
+deeplx_session = requests.Session()
+deeplx_adapter = HTTPAdapter(pool_connections=DEEPLX_CONNECTION_POOL, pool_maxsize=DEEPLX_CONNECTION_POOL)
+deeplx_session.mount("http://", deeplx_adapter)
+deeplx_session.mount("https://", deeplx_adapter)
+
+_DEEPLX_HEALTH_CACHE = {"ts": 0.0, "ok": False}
 
 # 文件清理配置（秒）
 FILE_MAX_AGE = 24 * 60 * 60  # 24小时
@@ -155,6 +165,35 @@ def process_parse(task_id: str, input_path: str):
                 print(f"⚠️ 删除文件失败: {e2}")
 
 
+def _deeplx_health_check(texts, source_lang, target_lang):
+    """对DeepLX做缓存健康检测，避免每次批量调用都额外请求一次"""
+    now = time.time()
+    last_ts = _DEEPLX_HEALTH_CACHE.get("ts", 0.0)
+    if (now - last_ts) < DEEPLX_HEALTH_TTL and _DEEPLX_HEALTH_CACHE.get("ok"):
+        return
+
+    sample = next((t for t in texts if (t or "").strip()), "")
+    if not sample:
+        return
+
+    payload = {
+        "text": sample[:200],
+        "source_lang": source_lang or DEFAULT_SOURCE_LANG,
+        "target_lang": target_lang or DEFAULT_TARGET_LANG,
+    }
+
+    try:
+        deeplx_session.post(
+            DEEPLX_API_URL,
+            json=payload,
+            timeout=(3, min(15, DEEPLX_TIMEOUT))
+        )
+        _DEEPLX_HEALTH_CACHE.update({"ts": now, "ok": True})
+    except Exception as exc:
+        _DEEPLX_HEALTH_CACHE.update({"ts": now, "ok": False})
+        print(f"⚠️ DeepLX连通性检测失败（将继续尝试翻译）: {exc}", flush=True)
+
+
 def translate_via_deeplx(text: str, source_lang: str, target_lang: str) -> str:
     if not DEEPLX_API_URL:
         raise ValueError("DEEPLX_API_URL 未配置")
@@ -174,7 +213,7 @@ def translate_via_deeplx(text: str, source_lang: str, target_lang: str) -> str:
                 time.sleep(wait_time)
 
             start_ts = time.time()
-            response = requests.post(
+            response = deeplx_session.post(
                 DEEPLX_API_URL,
                 json=payload,
                 timeout=(5, DEEPLX_TIMEOUT)
@@ -241,39 +280,90 @@ def batch_translate_via_deeplx(texts, source_lang, target_lang):
     if not texts:
         return []
 
-    # 快速连通性检测：避免翻译服务不可用时请求长时间卡住
-    sample = next((t for t in texts if (t or "").strip()), "")
-    if sample:
-        try:
-            requests.post(
-                DEEPLX_API_URL,
-                json={
-                    "text": (sample[:50] if sample else "ping"),
-                    "source_lang": source_lang or DEFAULT_SOURCE_LANG,
-                    "target_lang": target_lang or DEFAULT_TARGET_LANG,
-                },
-                # 该检测只用于快速提示，不应成为硬失败条件；某些实例首包较慢
-                timeout=(3, min(15, DEEPLX_TIMEOUT))
-            )
-        except Exception as exc:
-            print(f"⚠️ DeepLX连通性检测失败（将继续尝试翻译）: {exc}", flush=True)
+    _deeplx_health_check(texts, source_lang, target_lang)
 
+    # 优化：合并小文本块以减少请求次数
+    MAX_CHUNK_SIZE = 3000  # DeepLX可以处理较大的文本块
+    merged_chunks = []
+    current_chunk = []
+    current_size = 0
+
+    for text in texts:
+        if not text or not text.strip():
+            # 保留空文本的位置
+            if current_chunk:
+                merged_chunks.append(("\n\n".join(current_chunk), len(current_chunk)))
+                current_chunk = []
+                current_size = 0
+            merged_chunks.append(("", 1))
+            continue
+
+        text_len = len(text)
+        # 如果单个文本就超过限制，单独处理
+        if text_len > MAX_CHUNK_SIZE:
+            if current_chunk:
+                merged_chunks.append(("\n\n".join(current_chunk), len(current_chunk)))
+                current_chunk = []
+                current_size = 0
+            merged_chunks.append((text, 1))
+        # 如果加上当前文本会超过限制，先保存当前块
+        elif current_size + text_len + 2 > MAX_CHUNK_SIZE:
+            if current_chunk:
+                merged_chunks.append(("\n\n".join(current_chunk), len(current_chunk)))
+            current_chunk = [text]
+            current_size = text_len
+        # 否则累积到当前块
+        else:
+            current_chunk.append(text)
+            current_size += text_len + 2
+
+    # 保存最后一块
+    if current_chunk:
+        merged_chunks.append(("\n\n".join(current_chunk), len(current_chunk)))
+
+    print(f"📊 优化前: {len(texts)} 个文本块，优化后: {len(merged_chunks)} 个请求", flush=True)
+
+    # 使用线程池并发翻译
     results = []
     success_count = 0
     last_error = None
-    for idx, text in enumerate(texts, start=1):
-        if not text:
-            results.append(text)
-            continue
+
+    def translate_chunk(chunk_text):
+        if not chunk_text:
+            return chunk_text
         try:
-            translated = translate_via_deeplx(text, source_lang, target_lang)
-            results.append(translated)
-            success_count += 1
+            return translate_via_deeplx(chunk_text, source_lang, target_lang)
         except Exception as exc:
-            last_error = exc
-            results.append(text)
-        if DEEPLX_RATE_LIMIT > 0 and idx < len(texts):
-            time.sleep(DEEPLX_RATE_LIMIT)
+            print(f"⚠️ 翻译块失败: {exc}", flush=True)
+            return chunk_text
+
+    with ThreadPoolExecutor(max_workers=DEEPLX_MAX_CONCURRENCY) as executor:
+        futures = []
+        for chunk_text, count in merged_chunks:
+            future = executor.submit(translate_chunk, chunk_text)
+            futures.append((future, count))
+            # 添加小延迟避免瞬间大量请求
+            if DEEPLX_RATE_LIMIT > 0:
+                time.sleep(DEEPLX_RATE_LIMIT / DEEPLX_MAX_CONCURRENCY)
+
+        # 收集结果
+        for future, count in futures:
+            try:
+                translated = future.result()
+                if not translated:
+                    results.append(translated)
+                elif count == 1:
+                    results.append(translated)
+                    if translated:
+                        success_count += 1
+                else:
+                    # 拆分合并的块
+                    parts = translated.split("\n\n")
+                    results.extend(parts)
+                    success_count += len([p for p in parts if p])
+            except Exception as exc:
+                last_error = exc
+                results.extend([""] * count)
 
     if success_count == 0 and last_error is not None:
         raise ValueError(str(last_error))
@@ -426,6 +516,11 @@ def translate_batch():
         f"🌍 translate_batch provider_raw={provider_raw!r} provider={provider} chunks={len(texts)} source={source_lang} target={target_lang}",
         flush=True
     )
+    if texts:
+        lengths = [len(t or "") for t in texts]
+        max_len = max(lengths) if lengths else 0
+        min_len = min(lengths) if lengths else 0
+        print(f"🧩 chunk_len min={min_len} max={max_len}", flush=True)
 
     try:
         if provider == "openai":
