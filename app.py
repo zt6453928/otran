@@ -8,6 +8,7 @@ import threading
 import json
 import base64
 import shutil
+import time
 import requests
 from datetime import datetime
 from pathlib import Path
@@ -32,6 +33,9 @@ os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
 tasks = {}
 DEEPLX_MAX_CONCURRENCY = int(os.environ.get("DEEPLX_MAX_CONCURRENCY", "4"))
+DEEPLX_TIMEOUT = float(os.environ.get("DEEPLX_TIMEOUT", "30"))
+DEEPLX_MAX_RETRIES = int(os.environ.get("DEEPLX_MAX_RETRIES", "2"))
+DEEPLX_RATE_LIMIT = float(os.environ.get("DEEPLX_RATE_LIMIT", "0"))
 
 # 文件清理配置（秒）
 FILE_MAX_AGE = 24 * 60 * 60  # 24小时
@@ -39,7 +43,6 @@ FILE_MAX_AGE = 24 * 60 * 60  # 24小时
 
 def cleanup_old_files():
     """清理超过24小时的上传文件和输出文件"""
-    import time
     current_time = time.time()
     cleaned_count = 0
 
@@ -153,32 +156,52 @@ def process_parse(task_id: str, input_path: str):
 
 
 def translate_via_deeplx(text: str, source_lang: str, target_lang: str) -> str:
+    if not DEEPLX_API_URL:
+        raise ValueError("DEEPLX_API_URL 未配置")
+
     payload = {
         "text": text,
         "source_lang": source_lang or DEFAULT_SOURCE_LANG,
         "target_lang": target_lang or DEFAULT_TARGET_LANG
     }
-    try:
-        response = requests.post(
-            DEEPLX_API_URL,
-            json=payload,
-            timeout=60
-        )
-        if response.status_code == 429:
-            raise ValueError("DeepLX接口触发限流，请稍后重试或切换自定义翻译服务。")
-        response.raise_for_status()
-        data = response.json()
-    except requests.exceptions.HTTPError as exc:
-        status = exc.response.status_code if exc.response else None
-        if status == 429:
-            raise ValueError("DeepLX接口触发限流，请稍后重试或配置自定义OpenAI翻译。")
-        raise ValueError(f"DeepLX翻译失败: {exc}")
-    except Exception as exc:
-        raise ValueError(f"DeepLX翻译调用异常: {exc}")
 
-    if data.get("code") == 200:
-        return data.get("data", text)
-    raise ValueError(data.get("message", "DeepLX翻译失败"))
+    last_error = None
+    for attempt in range(1, DEEPLX_MAX_RETRIES + 1):
+        try:
+            if attempt > 1:
+                wait_time = min(2 ** (attempt - 1), 5)
+                print(f"⏳ DeepLX重试等待 {wait_time} 秒（第 {attempt}/{DEEPLX_MAX_RETRIES} 次）...", flush=True)
+                time.sleep(wait_time)
+
+            start_ts = time.time()
+            response = requests.post(
+                DEEPLX_API_URL,
+                json=payload,
+                timeout=(5, DEEPLX_TIMEOUT)
+            )
+            elapsed = time.time() - start_ts
+            print(f"🔁 DeepLX响应: status={response.status_code} time={elapsed:.2f}s", flush=True)
+
+            if response.status_code == 429:
+                raise ValueError("DeepLX接口触发限流(429)，请稍后重试或降低批量大小/频率。")
+
+            response.raise_for_status()
+            data = response.json()
+
+            if data.get("code") == 200:
+                return data.get("data", text)
+
+            raise ValueError(data.get("message") or data.get("msg") or "DeepLX翻译失败")
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as exc:
+            last_error = exc
+            print(f"⚠️ DeepLX请求异常: {exc}", flush=True)
+            continue
+        except Exception as exc:
+            last_error = exc
+            print(f"⚠️ DeepLX翻译错误: {exc}", flush=True)
+            continue
+
+    raise ValueError(f"DeepLX翻译失败: {last_error}")
 
 
 def translate_via_openai(text: str, config: dict, source_lang: str, target_lang: str) -> str:
@@ -217,19 +240,44 @@ def translate_via_openai(text: str, config: dict, source_lang: str, target_lang:
 def batch_translate_via_deeplx(texts, source_lang, target_lang):
     if not texts:
         return []
-    results = ["" for _ in texts]
-    worker_count = max(1, min(DEEPLX_MAX_CONCURRENCY, len(texts)))
-    with ThreadPoolExecutor(max_workers=worker_count) as executor:
-        future_map = {}
-        for idx, text in enumerate(texts):
-            future = executor.submit(translate_via_deeplx, text, source_lang, target_lang)
-            future_map[future] = idx
-        for future in as_completed(future_map):
-            idx = future_map[future]
-            try:
-                results[idx] = future.result()
-            except Exception:
-                results[idx] = texts[idx]
+
+    # 快速连通性检测：避免翻译服务不可用时请求长时间卡住
+    sample = next((t for t in texts if (t or "").strip()), "")
+    if sample:
+        try:
+            requests.post(
+                DEEPLX_API_URL,
+                json={
+                    "text": (sample[:50] if sample else "ping"),
+                    "source_lang": source_lang or DEFAULT_SOURCE_LANG,
+                    "target_lang": target_lang or DEFAULT_TARGET_LANG,
+                },
+                # 该检测只用于快速提示，不应成为硬失败条件；某些实例首包较慢
+                timeout=(3, min(15, DEEPLX_TIMEOUT))
+            )
+        except Exception as exc:
+            print(f"⚠️ DeepLX连通性检测失败（将继续尝试翻译）: {exc}", flush=True)
+
+    results = []
+    success_count = 0
+    last_error = None
+    for idx, text in enumerate(texts, start=1):
+        if not text:
+            results.append(text)
+            continue
+        try:
+            translated = translate_via_deeplx(text, source_lang, target_lang)
+            results.append(translated)
+            success_count += 1
+        except Exception as exc:
+            last_error = exc
+            results.append(text)
+        if DEEPLX_RATE_LIMIT > 0 and idx < len(texts):
+            time.sleep(DEEPLX_RATE_LIMIT)
+
+    if success_count == 0 and last_error is not None:
+        raise ValueError(str(last_error))
+
     return results
 
 
@@ -347,7 +395,8 @@ def translate_text():
     if not text:
         return jsonify({"error": "缺少文本内容"}), 400
 
-    provider = data.get("provider", "deeplx")
+    provider_raw = data.get("provider", "deeplx")
+    provider = (provider_raw or "").strip().lower()
     source_lang = data.get("source_lang") or DEFAULT_SOURCE_LANG
     target_lang = data.get("target_lang") or DEFAULT_TARGET_LANG
 
@@ -369,14 +418,21 @@ def translate_batch():
         return jsonify({"error": "缺少翻译内容"}), 400
 
     texts = [(chunk.get("text") or "") for chunk in chunks]
-    provider = data.get("provider", "deeplx")
+    provider_raw = data.get("provider", "deeplx")
+    provider = (provider_raw or "").strip().lower()
     source_lang = data.get("source_lang") or DEFAULT_SOURCE_LANG
     target_lang = data.get("target_lang") or DEFAULT_TARGET_LANG
+    print(
+        f"🌍 translate_batch provider_raw={provider_raw!r} provider={provider} chunks={len(texts)} source={source_lang} target={target_lang}",
+        flush=True
+    )
 
     try:
         if provider == "openai":
+            print("➡️ using openai", flush=True)
             translations = batch_translate_via_openai(texts, data.get("config"), source_lang, target_lang)
         else:
+            print("➡️ using deeplx", flush=True)
             translations = batch_translate_via_deeplx(texts, source_lang, target_lang)
         return jsonify({"translations": translations})
     except Exception as e:

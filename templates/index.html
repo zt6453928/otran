@@ -1182,45 +1182,64 @@
                 finishTranslationQueue();
                 return;
             }
-            const queueSnapshot = translationQueue.slice();
-            const payload = {
-                provider: translationSettings.provider,
-                source_lang: translationSettings.source_lang,
-                target_lang: translationSettings.target_lang,
-                chunks: queueSnapshot.map(chunk => ({ text: chunk.text || '' }))
-            };
-            if (translationSettings.provider === 'openai') {
-                payload.config = translationSettings.openai;
-            }
-            updateTranslationOverlay('翻译中，请稍后...', '', 15);
             try {
-                const response = await fetch('/api/translate_batch', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-                const data = await response.json();
-                if (!response.ok) {
-                    throw new Error(data.error || '翻译服务异常');
-                }
-                const translations = data.translations || [];
-                const totalChunks = queueSnapshot.length;
-                for (let i = 0; i < queueSnapshot.length; i++) {
-                    const chunk = queueSnapshot[i];
-                    const translated = translations[i] ?? chunk.text;
-                    if (chunk.type === 'block') {
-                        handleBlockTranslationResult(chunk, translated);
-                    } else {
-                        translationResults.push({
-                            label: chunk.label,
-                            text: normalizeTranslatedText(restoreMarkdownMathPlaceholders(translated))
-                        });
+                const totalChunks = translationQueue.length;
+                const batchSize = 5;
+                updateTranslationOverlay('翻译中，请稍后...', '正在发送翻译请求...', 10);
+
+                while (translationQueue.length) {
+                    const queueSnapshot = translationQueue.splice(0, batchSize);
+                    const startIndex = completedTranslationChunks + 1;
+                    const endIndex = completedTranslationChunks + queueSnapshot.length;
+                    const payload = {
+                        provider: translationSettings.provider,
+                        source_lang: translationSettings.source_lang,
+                        target_lang: translationSettings.target_lang,
+                        chunks: queueSnapshot.map(chunk => ({ text: chunk.text || '' }))
+                    };
+                    if (translationSettings.provider === 'openai') {
+                        payload.config = translationSettings.openai;
                     }
-                    completedTranslationChunks += 1;
-                    const percent = Math.round((completedTranslationChunks / totalChunks) * 100);
-                    updateTranslationOverlay('翻译中，请稍后...', '', percent);
+
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 330000);
+                    updateTranslationOverlay(
+                        '翻译中，请稍后...',
+                        `正在翻译 ${startIndex}-${endIndex}/${totalChunks}...`,
+                        Math.round((completedTranslationChunks / totalChunks) * 100)
+                    );
+
+                    const response = await fetch('/api/translate_batch', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload),
+                        signal: controller.signal
+                    });
+                    clearTimeout(timeoutId);
+
+                    const data = await response.json();
+                    if (!response.ok) {
+                        throw new Error(data.error || '翻译服务异常');
+                    }
+
+                    const translations = data.translations || [];
+                    for (let i = 0; i < queueSnapshot.length; i++) {
+                        const chunk = queueSnapshot[i];
+                        const translated = translations[i] ?? chunk.text;
+                        if (chunk.type === 'block') {
+                            handleBlockTranslationResult(chunk, translated);
+                        } else {
+                            translationResults.push({
+                                label: chunk.label,
+                                text: normalizeTranslatedText(restoreMarkdownMathPlaceholders(translated))
+                            });
+                        }
+                        completedTranslationChunks += 1;
+                        const percent = Math.round((completedTranslationChunks / totalChunks) * 100);
+                        updateTranslationOverlay('翻译中，请稍后...', '', percent);
+                    }
                 }
-                translationQueue = [];
+
                 finishTranslationQueue();
             } catch (error) {
                 translationInProgress = false;
@@ -1229,7 +1248,11 @@
                 completedTranslationChunks = 0;
                 blockTranslationBuffer = {};
                 hideTranslationOverlay();
-                showError(error.message || '翻译失败，请稍后再试');
+                if (error?.name === 'AbortError') {
+                    showError('翻译请求超时，请检查翻译服务地址/网络后重试');
+                } else {
+                    showError(error.message || '翻译失败，请稍后再试');
+                }
             }
         }
 
@@ -1428,8 +1451,8 @@
 
         function updateTranslationOverlay(title, detail, percent) {
             if (!translationOverlay) return;
-            if (title) translationOverlayText.textContent = title;
-            if (detail) translationOverlayDetail.textContent = detail;
+            if (title !== undefined && title !== null) translationOverlayText.textContent = title;
+            if (detail !== undefined && detail !== null) translationOverlayDetail.textContent = detail;
             if (typeof percent === 'number') {
                 const clamped = Math.max(5, Math.min(100, percent));
                 translationOverlayBar.style.width = clamped + '%';
