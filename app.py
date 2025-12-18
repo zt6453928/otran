@@ -679,37 +679,49 @@ def download_as_markdown(task, content_list, base_filename):
     )
 
 
+def _has_translated_content(content_list):
+    """检查content_list中是否包含翻译后的内容"""
+    if not content_list:
+        return False
+    for item in content_list:
+        if item.get('translated_text'):
+            return True
+    return False
+
+
 def download_as_html(task, content_list, base_filename):
-    """下载为HTML格式 - 优先使用MinerU生成的文件"""
-    # 检查是否有MinerU生成的HTML文件
-    export_files = task.result.get("export_files", {})
-    mineru_html = export_files.get("html")
+    """下载为HTML格式 - 有翻译内容时使用本地转换，否则用MinerU原文"""
+    # 检查是否有翻译内容
+    has_translation = _has_translated_content(content_list)
 
-    if mineru_html:
-        # 使用MinerU服务端生成的HTML
-        print(f"✓ 使用MinerU生成的HTML文件")
-        output_path = os.path.join(OUTPUT_FOLDER, f"{task.task_id}_export.html")
-        with open(output_path, 'wb') as f:
-            f.write(mineru_html)
+    # 如果没有翻译内容，可以使用MinerU生成的原文HTML
+    if not has_translation:
+        export_files = task.result.get("export_files", {})
+        mineru_html = export_files.get("html")
+        if mineru_html:
+            print(f"✓ 使用MinerU生成的HTML文件（原文）")
+            output_path = os.path.join(OUTPUT_FOLDER, f"{task.task_id}_export.html")
+            with open(output_path, 'wb') as f:
+                f.write(mineru_html)
 
-        @after_this_request
-        def cleanup(response):
-            try:
-                if os.path.exists(output_path):
-                    os.remove(output_path)
-            except Exception:
-                pass
-            return response
+            @after_this_request
+            def cleanup(response):
+                try:
+                    if os.path.exists(output_path):
+                        os.remove(output_path)
+                except Exception:
+                    pass
+                return response
 
-        return send_file(
-            output_path,
-            as_attachment=True,
-            download_name=f"{base_filename}.html",
-            mimetype='text/html'
-        )
+            return send_file(
+                output_path,
+                as_attachment=True,
+                download_name=f"{base_filename}.html",
+                mimetype='text/html'
+            )
 
-    # 回退：本地转换（兼容旧任务）
-    print(f"⚠️ MinerU未生成HTML，使用本地转换")
+    # 有翻译内容，使用本地转换
+    print(f"✓ 使用本地转换生成HTML（含译文）")
     import markdown
     from pdf_generator import content_list_to_markdown
 
@@ -782,36 +794,38 @@ def download_as_html(task, content_list, base_filename):
 
 
 def download_as_docx(task, content_list, base_filename):
-    """下载为DOCX格式 - 优先使用MinerU生成的文件"""
-    # 检查是否有MinerU生成的DOCX文件
-    export_files = task.result.get("export_files", {})
-    mineru_docx = export_files.get("docx")
+    """下载为DOCX格式 - 有翻译内容时使用本地转换，否则用MinerU原文"""
+    # 检查是否有翻译内容
+    has_translation = _has_translated_content(content_list)
 
-    if mineru_docx:
-        # 使用MinerU服务端生成的DOCX
-        print(f"✓ 使用MinerU生成的DOCX文件")
-        output_path = os.path.join(OUTPUT_FOLDER, f"{task.task_id}_export.docx")
-        with open(output_path, 'wb') as f:
-            f.write(mineru_docx)
+    # 如果没有翻译内容，可以使用MinerU生成的原文DOCX
+    if not has_translation:
+        export_files = task.result.get("export_files", {})
+        mineru_docx = export_files.get("docx")
+        if mineru_docx:
+            print(f"✓ 使用MinerU生成的DOCX文件（原文）")
+            output_path = os.path.join(OUTPUT_FOLDER, f"{task.task_id}_export.docx")
+            with open(output_path, 'wb') as f:
+                f.write(mineru_docx)
 
-        @after_this_request
-        def cleanup(response):
-            try:
-                if os.path.exists(output_path):
-                    os.remove(output_path)
-            except Exception:
-                pass
-            return response
+            @after_this_request
+            def cleanup(response):
+                try:
+                    if os.path.exists(output_path):
+                        os.remove(output_path)
+                except Exception:
+                    pass
+                return response
 
-        return send_file(
-            output_path,
-            as_attachment=True,
-            download_name=f"{base_filename}.docx",
-            mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-        )
+            return send_file(
+                output_path,
+                as_attachment=True,
+                download_name=f"{base_filename}.docx",
+                mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+            )
 
-    # 回退：本地转换（兼容旧任务）
-    print(f"⚠️ MinerU未生成DOCX，使用本地转换")
+    # 有翻译内容，使用本地转换
+    print(f"✓ 使用本地转换生成DOCX（含译文）")
     from docx import Document
     from docx.shared import Inches, Pt
     from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -935,36 +949,38 @@ def download_as_json(task, content_list, base_filename):
 
 
 def download_as_latex(task, content_list, base_filename):
-    """下载为LaTeX格式 - 优先使用MinerU生成的文件"""
-    # 检查是否有MinerU生成的LaTeX文件
-    export_files = task.result.get("export_files", {})
-    mineru_latex = export_files.get("latex")
+    """下载为LaTeX格式 - 有翻译内容时使用本地转换，否则用MinerU原文"""
+    # 检查是否有翻译内容
+    has_translation = _has_translated_content(content_list)
 
-    if mineru_latex:
-        # 使用MinerU服务端生成的LaTeX
-        print(f"✓ 使用MinerU生成的LaTeX文件")
-        output_path = os.path.join(OUTPUT_FOLDER, f"{task.task_id}_export.tex")
-        with open(output_path, 'wb') as f:
-            f.write(mineru_latex)
+    # 如果没有翻译内容，可以使用MinerU生成的原文LaTeX
+    if not has_translation:
+        export_files = task.result.get("export_files", {})
+        mineru_latex = export_files.get("latex")
+        if mineru_latex:
+            print(f"✓ 使用MinerU生成的LaTeX文件（原文）")
+            output_path = os.path.join(OUTPUT_FOLDER, f"{task.task_id}_export.tex")
+            with open(output_path, 'wb') as f:
+                f.write(mineru_latex)
 
-        @after_this_request
-        def cleanup(response):
-            try:
-                if os.path.exists(output_path):
-                    os.remove(output_path)
-            except Exception:
-                pass
-            return response
+            @after_this_request
+            def cleanup(response):
+                try:
+                    if os.path.exists(output_path):
+                        os.remove(output_path)
+                except Exception:
+                    pass
+                return response
 
-        return send_file(
-            output_path,
-            as_attachment=True,
-            download_name=f"{base_filename}.tex",
-            mimetype='application/x-tex'
-        )
+            return send_file(
+                output_path,
+                as_attachment=True,
+                download_name=f"{base_filename}.tex",
+                mimetype='application/x-tex'
+            )
 
-    # 回退：本地转换（兼容旧任务）
-    print(f"⚠️ MinerU未生成LaTeX，使用本地转换")
+    # 有翻译内容，使用本地转换
+    print(f"✓ 使用本地转换生成LaTeX（含译文）")
     from pdf_generator import content_list_to_markdown
     import re
 
