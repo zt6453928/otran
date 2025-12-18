@@ -680,7 +680,36 @@ def download_as_markdown(task, content_list, base_filename):
 
 
 def download_as_html(task, content_list, base_filename):
-    """下载为HTML格式"""
+    """下载为HTML格式 - 优先使用MinerU生成的文件"""
+    # 检查是否有MinerU生成的HTML文件
+    export_files = task.result.get("export_files", {})
+    mineru_html = export_files.get("html")
+
+    if mineru_html:
+        # 使用MinerU服务端生成的HTML
+        print(f"✓ 使用MinerU生成的HTML文件")
+        output_path = os.path.join(OUTPUT_FOLDER, f"{task.task_id}_export.html")
+        with open(output_path, 'wb') as f:
+            f.write(mineru_html)
+
+        @after_this_request
+        def cleanup(response):
+            try:
+                if os.path.exists(output_path):
+                    os.remove(output_path)
+            except Exception:
+                pass
+            return response
+
+        return send_file(
+            output_path,
+            as_attachment=True,
+            download_name=f"{base_filename}.html",
+            mimetype='text/html'
+        )
+
+    # 回退：本地转换（兼容旧任务）
+    print(f"⚠️ MinerU未生成HTML，使用本地转换")
     import markdown
     from pdf_generator import content_list_to_markdown
 
@@ -701,7 +730,6 @@ def download_as_html(task, content_list, base_filename):
     for img_name, img_data in images.items():
         if img_data:
             img_base64 = base64.b64encode(img_data).decode('utf-8')
-            # 替换图片路径为base64
             html_body = html_body.replace(
                 f'/api/image/{task.task_id}/{img_name}',
                 f'data:image/png;base64,{img_base64}'
@@ -711,7 +739,6 @@ def download_as_html(task, content_list, base_filename):
                 f'data:image/png;base64,{img_base64}'
             )
 
-    # 构建完整HTML文档
     html_content = f'''<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -719,30 +746,13 @@ def download_as_html(task, content_list, base_filename):
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{base_filename}</title>
     <style>
-        body {{
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            max-width: 900px;
-            margin: 0 auto;
-            padding: 40px 20px;
-            line-height: 1.8;
-            color: #333;
-        }}
-        h1, h2, h3, h4, h5, h6 {{
-            margin-top: 1.5em;
-            margin-bottom: 0.5em;
-            color: #1a1a1a;
-        }}
-        h1 {{ font-size: 2em; border-bottom: 2px solid #eee; padding-bottom: 0.3em; }}
-        h2 {{ font-size: 1.5em; border-bottom: 1px solid #eee; padding-bottom: 0.3em; }}
-        p {{ margin: 1em 0; }}
-        img {{ max-width: 100%; height: auto; margin: 1em 0; }}
+        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 900px; margin: 0 auto; padding: 40px 20px; line-height: 1.8; color: #333; }}
+        h1, h2, h3 {{ margin-top: 1.5em; color: #1a1a1a; }}
+        img {{ max-width: 100%; height: auto; }}
         pre {{ background: #f5f5f5; padding: 15px; border-radius: 5px; overflow-x: auto; }}
-        code {{ background: #f5f5f5; padding: 2px 6px; border-radius: 3px; font-family: monospace; }}
-        pre code {{ background: none; padding: 0; }}
-        table {{ border-collapse: collapse; width: 100%; margin: 1em 0; }}
-        th, td {{ border: 1px solid #ddd; padding: 8px 12px; text-align: left; }}
-        th {{ background: #f5f5f5; font-weight: bold; }}
-        blockquote {{ border-left: 4px solid #ddd; margin: 1em 0; padding-left: 1em; color: #666; }}
+        code {{ background: #f5f5f5; padding: 2px 6px; border-radius: 3px; }}
+        table {{ border-collapse: collapse; width: 100%; }}
+        th, td {{ border: 1px solid #ddd; padding: 8px 12px; }}
     </style>
 </head>
 <body>
@@ -772,19 +782,45 @@ def download_as_html(task, content_list, base_filename):
 
 
 def download_as_docx(task, content_list, base_filename):
-    """下载为DOCX格式"""
+    """下载为DOCX格式 - 优先使用MinerU生成的文件"""
+    # 检查是否有MinerU生成的DOCX文件
+    export_files = task.result.get("export_files", {})
+    mineru_docx = export_files.get("docx")
+
+    if mineru_docx:
+        # 使用MinerU服务端生成的DOCX
+        print(f"✓ 使用MinerU生成的DOCX文件")
+        output_path = os.path.join(OUTPUT_FOLDER, f"{task.task_id}_export.docx")
+        with open(output_path, 'wb') as f:
+            f.write(mineru_docx)
+
+        @after_this_request
+        def cleanup(response):
+            try:
+                if os.path.exists(output_path):
+                    os.remove(output_path)
+            except Exception:
+                pass
+            return response
+
+        return send_file(
+            output_path,
+            as_attachment=True,
+            download_name=f"{base_filename}.docx",
+            mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        )
+
+    # 回退：本地转换（兼容旧任务）
+    print(f"⚠️ MinerU未生成DOCX，使用本地转换")
     from docx import Document
     from docx.shared import Inches, Pt
     from docx.enum.text import WD_ALIGN_PARAGRAPH
     import re
 
     doc = Document()
-
-    # 设置文档标题
     title = doc.add_heading(base_filename, 0)
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-    # 使用content_list或原始markdown
     if content_list:
         for item in content_list:
             item_type = item.get('type', 'text')
@@ -792,7 +828,6 @@ def download_as_docx(task, content_list, base_filename):
             text_level = item.get('text_level')
 
             if item_type == 'image':
-                # 处理图片
                 img_path = item.get('img_path', '')
                 img_name = img_path.split('/')[-1] if img_path else ''
                 images = task.result.get("images", {})
@@ -804,13 +839,11 @@ def download_as_docx(task, content_list, base_filename):
                             doc.add_picture(img_stream, width=Inches(5))
                         except Exception:
                             pass
-                # 添加图片说明
                 caption = item.get('image_caption', [])
                 if caption:
                     p = doc.add_paragraph(' '.join(caption))
                     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
             elif item_type == 'list':
-                # 处理列表
                 if text:
                     doc.add_paragraph(text)
                 else:
@@ -818,20 +851,15 @@ def download_as_docx(task, content_list, base_filename):
                     for li in list_items:
                         doc.add_paragraph(li, style='List Bullet')
             elif text_level and text_level <= 6:
-                # 标题
                 doc.add_heading(text, level=min(text_level, 9))
             elif text:
-                # 普通段落
                 doc.add_paragraph(text)
     else:
-        # 简单处理Markdown
         markdown_content = task.result.get("markdown", "")
-        lines = markdown_content.split('\n')
-        for line in lines:
+        for line in markdown_content.split('\n'):
             line = line.strip()
             if not line:
                 continue
-            # 处理标题
             if line.startswith('# '):
                 doc.add_heading(line[2:], level=1)
             elif line.startswith('## '):
@@ -907,7 +935,36 @@ def download_as_json(task, content_list, base_filename):
 
 
 def download_as_latex(task, content_list, base_filename):
-    """下载为LaTeX格式"""
+    """下载为LaTeX格式 - 优先使用MinerU生成的文件"""
+    # 检查是否有MinerU生成的LaTeX文件
+    export_files = task.result.get("export_files", {})
+    mineru_latex = export_files.get("latex")
+
+    if mineru_latex:
+        # 使用MinerU服务端生成的LaTeX
+        print(f"✓ 使用MinerU生成的LaTeX文件")
+        output_path = os.path.join(OUTPUT_FOLDER, f"{task.task_id}_export.tex")
+        with open(output_path, 'wb') as f:
+            f.write(mineru_latex)
+
+        @after_this_request
+        def cleanup(response):
+            try:
+                if os.path.exists(output_path):
+                    os.remove(output_path)
+            except Exception:
+                pass
+            return response
+
+        return send_file(
+            output_path,
+            as_attachment=True,
+            download_name=f"{base_filename}.tex",
+            mimetype='application/x-tex'
+        )
+
+    # 回退：本地转换（兼容旧任务）
+    print(f"⚠️ MinerU未生成LaTeX，使用本地转换")
     from pdf_generator import content_list_to_markdown
     import re
 
@@ -919,7 +976,6 @@ def download_as_latex(task, content_list, base_filename):
     if not markdown_content:
         return jsonify({"error": "没有可导出的内容"}), 400
 
-    # 转换Markdown为LaTeX
     latex_content = markdown_to_latex(markdown_content, base_filename)
 
     output_path = os.path.join(OUTPUT_FOLDER, f"{task.task_id}_export.tex")

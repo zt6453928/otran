@@ -59,7 +59,8 @@ class DocumentParser:
             "is_ocr": True,
             "enable_formula": True,
             "enable_table": True,
-            "model_version": "vlm"
+            "model_version": "vlm",
+            "extra_formats": ["docx", "html", "latex"]  # 额外导出格式
         }
 
         response = requests.post(url, headers=self.headers, json=payload)
@@ -83,7 +84,8 @@ class DocumentParser:
             "is_ocr": True,
             "enable_formula": True,
             "enable_table": True,
-            "model_version": "vlm"
+            "model_version": "vlm",
+            "extra_formats": ["docx", "html", "latex"]  # 额外导出格式
         }
 
         import sys
@@ -232,7 +234,13 @@ class DocumentParser:
             "content_list": [],
             "layout_info": [],
             "images": {},
-            "page_mappings": {}
+            "page_mappings": {},
+            # 额外导出格式（MinerU服务端生成）
+            "export_files": {
+                "docx": None,
+                "html": None,
+                "latex": None
+            }
         }
 
         # 解压并读取内容
@@ -263,6 +271,19 @@ class DocumentParser:
                     img_name = os.path.basename(filename)
                     result["images"][img_name] = zf.read(filename)
                     print(f"  ✓ 读取图片: {img_name}")
+
+                # 读取额外导出格式文件（MinerU服务端生成）
+                elif filename.endswith('.docx'):
+                    result["export_files"]["docx"] = zf.read(filename)
+                    print(f"  ✓ 读取DOCX文件: {os.path.basename(filename)}")
+
+                elif filename.endswith('.html'):
+                    result["export_files"]["html"] = zf.read(filename)
+                    print(f"  ✓ 读取HTML文件: {os.path.basename(filename)}")
+
+                elif filename.endswith('.tex'):
+                    result["export_files"]["latex"] = zf.read(filename)
+                    print(f"  ✓ 读取LaTeX文件: {os.path.basename(filename)}")
 
         # 计算每页坐标映射，便于前端精确定位
         result["page_mappings"] = self._build_page_mappings(
