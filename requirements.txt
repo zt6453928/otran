@@ -6,3 +6,5 @@ flask
 flask-cors
 reportlab
 gunicorn
+python-docx
+markdown

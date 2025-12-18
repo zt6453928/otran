@@ -603,6 +603,501 @@ def download_translated_pdf(task_id):
         return jsonify({"error": f"PDF生成失败: {str(e)}"}), 500
 
 
+@app.route('/api/download/<task_id>/<format_type>', methods=['POST'])
+def download_document(task_id, format_type):
+    """下载多种格式的文档"""
+    task = tasks.get(task_id)
+    if not task:
+        return jsonify({"error": "任务不存在"}), 404
+    if task.status != 'completed' or not task.result:
+        return jsonify({"error": "任务未完成"}), 400
+
+    data = request.get_json(force=True) if request.is_json else {}
+    content_list = data.get("content_list", [])
+
+    # 获取基础文件名（去掉扩展名）
+    base_filename = os.path.splitext(task.filename)[0]
+
+    try:
+        if format_type == 'markdown':
+            return download_as_markdown(task, content_list, base_filename)
+        elif format_type == 'html':
+            return download_as_html(task, content_list, base_filename)
+        elif format_type == 'docx':
+            return download_as_docx(task, content_list, base_filename)
+        elif format_type == 'json':
+            return download_as_json(task, content_list, base_filename)
+        elif format_type == 'latex':
+            return download_as_latex(task, content_list, base_filename)
+        else:
+            return jsonify({"error": f"不支持的格式: {format_type}"}), 400
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": f"导出失败: {str(e)}"}), 500
+
+
+def get_content_markdown(task, content_list):
+    """从content_list或task.result获取Markdown内容"""
+    from pdf_generator import content_list_to_markdown
+    if content_list:
+        return content_list_to_markdown(content_list, task.result.get("images", {}))
+    return task.result.get("markdown", "")
+
+
+def download_as_markdown(task, content_list, base_filename):
+    """下载为Markdown格式"""
+    from pdf_generator import content_list_to_markdown
+
+    if content_list:
+        markdown_content = content_list_to_markdown(content_list, task.result.get("images", {}))
+    else:
+        markdown_content = task.result.get("markdown", "")
+
+    if not markdown_content:
+        return jsonify({"error": "没有可导出的内容"}), 400
+
+    # 创建临时文件
+    output_path = os.path.join(OUTPUT_FOLDER, f"{task.task_id}_export.md")
+    with open(output_path, 'w', encoding='utf-8') as f:
+        f.write(markdown_content)
+
+    @after_this_request
+    def cleanup(response):
+        try:
+            if os.path.exists(output_path):
+                os.remove(output_path)
+        except Exception:
+            pass
+        return response
+
+    return send_file(
+        output_path,
+        as_attachment=True,
+        download_name=f"{base_filename}.md",
+        mimetype='text/markdown'
+    )
+
+
+def download_as_html(task, content_list, base_filename):
+    """下载为HTML格式"""
+    import markdown
+    from pdf_generator import content_list_to_markdown
+
+    if content_list:
+        markdown_content = content_list_to_markdown(content_list, task.result.get("images", {}))
+    else:
+        markdown_content = task.result.get("markdown", "")
+
+    if not markdown_content:
+        return jsonify({"error": "没有可导出的内容"}), 400
+
+    # 转换Markdown为HTML
+    md = markdown.Markdown(extensions=['tables', 'fenced_code', 'toc'])
+    html_body = md.convert(markdown_content)
+
+    # 处理图片 - 将图片转为base64内嵌
+    images = task.result.get("images", {})
+    for img_name, img_data in images.items():
+        if img_data:
+            img_base64 = base64.b64encode(img_data).decode('utf-8')
+            # 替换图片路径为base64
+            html_body = html_body.replace(
+                f'/api/image/{task.task_id}/{img_name}',
+                f'data:image/png;base64,{img_base64}'
+            )
+            html_body = html_body.replace(
+                f'images/{img_name}',
+                f'data:image/png;base64,{img_base64}'
+            )
+
+    # 构建完整HTML文档
+    html_content = f'''<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{base_filename}</title>
+    <style>
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 40px 20px;
+            line-height: 1.8;
+            color: #333;
+        }}
+        h1, h2, h3, h4, h5, h6 {{
+            margin-top: 1.5em;
+            margin-bottom: 0.5em;
+            color: #1a1a1a;
+        }}
+        h1 {{ font-size: 2em; border-bottom: 2px solid #eee; padding-bottom: 0.3em; }}
+        h2 {{ font-size: 1.5em; border-bottom: 1px solid #eee; padding-bottom: 0.3em; }}
+        p {{ margin: 1em 0; }}
+        img {{ max-width: 100%; height: auto; margin: 1em 0; }}
+        pre {{ background: #f5f5f5; padding: 15px; border-radius: 5px; overflow-x: auto; }}
+        code {{ background: #f5f5f5; padding: 2px 6px; border-radius: 3px; font-family: monospace; }}
+        pre code {{ background: none; padding: 0; }}
+        table {{ border-collapse: collapse; width: 100%; margin: 1em 0; }}
+        th, td {{ border: 1px solid #ddd; padding: 8px 12px; text-align: left; }}
+        th {{ background: #f5f5f5; font-weight: bold; }}
+        blockquote {{ border-left: 4px solid #ddd; margin: 1em 0; padding-left: 1em; color: #666; }}
+    </style>
+</head>
+<body>
+{html_body}
+</body>
+</html>'''
+
+    output_path = os.path.join(OUTPUT_FOLDER, f"{task.task_id}_export.html")
+    with open(output_path, 'w', encoding='utf-8') as f:
+        f.write(html_content)
+
+    @after_this_request
+    def cleanup(response):
+        try:
+            if os.path.exists(output_path):
+                os.remove(output_path)
+        except Exception:
+            pass
+        return response
+
+    return send_file(
+        output_path,
+        as_attachment=True,
+        download_name=f"{base_filename}.html",
+        mimetype='text/html'
+    )
+
+
+def download_as_docx(task, content_list, base_filename):
+    """下载为DOCX格式"""
+    from docx import Document
+    from docx.shared import Inches, Pt
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    import re
+
+    doc = Document()
+
+    # 设置文档标题
+    title = doc.add_heading(base_filename, 0)
+    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    # 使用content_list或原始markdown
+    if content_list:
+        for item in content_list:
+            item_type = item.get('type', 'text')
+            text = item.get('translated_text') or item.get('text', '')
+            text_level = item.get('text_level')
+
+            if item_type == 'image':
+                # 处理图片
+                img_path = item.get('img_path', '')
+                img_name = img_path.split('/')[-1] if img_path else ''
+                images = task.result.get("images", {})
+                if img_name and img_name in images:
+                    img_data = images[img_name]
+                    if img_data:
+                        try:
+                            img_stream = BytesIO(img_data)
+                            doc.add_picture(img_stream, width=Inches(5))
+                        except Exception:
+                            pass
+                # 添加图片说明
+                caption = item.get('image_caption', [])
+                if caption:
+                    p = doc.add_paragraph(' '.join(caption))
+                    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            elif item_type == 'list':
+                # 处理列表
+                if text:
+                    doc.add_paragraph(text)
+                else:
+                    list_items = item.get('list_items', [])
+                    for li in list_items:
+                        doc.add_paragraph(li, style='List Bullet')
+            elif text_level and text_level <= 6:
+                # 标题
+                doc.add_heading(text, level=min(text_level, 9))
+            elif text:
+                # 普通段落
+                doc.add_paragraph(text)
+    else:
+        # 简单处理Markdown
+        markdown_content = task.result.get("markdown", "")
+        lines = markdown_content.split('\n')
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            # 处理标题
+            if line.startswith('# '):
+                doc.add_heading(line[2:], level=1)
+            elif line.startswith('## '):
+                doc.add_heading(line[3:], level=2)
+            elif line.startswith('### '):
+                doc.add_heading(line[4:], level=3)
+            elif line.startswith('- ') or line.startswith('* '):
+                doc.add_paragraph(line[2:], style='List Bullet')
+            elif re.match(r'^\d+\. ', line):
+                doc.add_paragraph(re.sub(r'^\d+\. ', '', line), style='List Number')
+            else:
+                doc.add_paragraph(line)
+
+    output_path = os.path.join(OUTPUT_FOLDER, f"{task.task_id}_export.docx")
+    doc.save(output_path)
+
+    @after_this_request
+    def cleanup(response):
+        try:
+            if os.path.exists(output_path):
+                os.remove(output_path)
+        except Exception:
+            pass
+        return response
+
+    return send_file(
+        output_path,
+        as_attachment=True,
+        download_name=f"{base_filename}.docx",
+        mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    )
+
+
+def download_as_json(task, content_list, base_filename):
+    """下载为JSON格式（包含完整结构信息）"""
+    # 构建完整的JSON数据
+    export_data = {
+        "filename": task.filename,
+        "task_id": task.task_id,
+        "created_at": task.created_at.isoformat(),
+        "content_list": content_list if content_list else task.result.get("content_list", []),
+        "markdown": task.result.get("markdown", ""),
+        "page_mappings": task.result.get("page_mappings", {}),
+        "metadata": {
+            "export_time": datetime.now().isoformat(),
+            "format_version": "1.0"
+        }
+    }
+
+    # 不导出图片的二进制数据，只导出图片名称列表
+    images = task.result.get("images", {})
+    export_data["image_names"] = list(images.keys())
+
+    output_path = os.path.join(OUTPUT_FOLDER, f"{task.task_id}_export.json")
+    with open(output_path, 'w', encoding='utf-8') as f:
+        json.dump(export_data, f, ensure_ascii=False, indent=2)
+
+    @after_this_request
+    def cleanup(response):
+        try:
+            if os.path.exists(output_path):
+                os.remove(output_path)
+        except Exception:
+            pass
+        return response
+
+    return send_file(
+        output_path,
+        as_attachment=True,
+        download_name=f"{base_filename}.json",
+        mimetype='application/json'
+    )
+
+
+def download_as_latex(task, content_list, base_filename):
+    """下载为LaTeX格式"""
+    from pdf_generator import content_list_to_markdown
+    import re
+
+    if content_list:
+        markdown_content = content_list_to_markdown(content_list, task.result.get("images", {}))
+    else:
+        markdown_content = task.result.get("markdown", "")
+
+    if not markdown_content:
+        return jsonify({"error": "没有可导出的内容"}), 400
+
+    # 转换Markdown为LaTeX
+    latex_content = markdown_to_latex(markdown_content, base_filename)
+
+    output_path = os.path.join(OUTPUT_FOLDER, f"{task.task_id}_export.tex")
+    with open(output_path, 'w', encoding='utf-8') as f:
+        f.write(latex_content)
+
+    @after_this_request
+    def cleanup(response):
+        try:
+            if os.path.exists(output_path):
+                os.remove(output_path)
+        except Exception:
+            pass
+        return response
+
+    return send_file(
+        output_path,
+        as_attachment=True,
+        download_name=f"{base_filename}.tex",
+        mimetype='application/x-tex'
+    )
+
+
+def markdown_to_latex(markdown_content, title="Document"):
+    """将Markdown转换为LaTeX格式"""
+    import re
+
+    # LaTeX文档头
+    latex = r'''\documentclass[12pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{xeCJK}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{geometry}
+\geometry{margin=2.5cm}
+
+\lstset{
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    frame=single,
+    backgroundcolor=\color{gray!10}
+}
+
+\title{''' + escape_latex(title) + r'''}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+'''
+
+    lines = markdown_content.split('\n')
+    in_code_block = False
+    code_lang = ''
+
+    for line in lines:
+        # 代码块处理
+        if line.strip().startswith('```'):
+            if not in_code_block:
+                in_code_block = True
+                code_lang = line.strip()[3:]
+                latex += '\\begin{lstlisting}'
+                if code_lang:
+                    latex += f'[language={code_lang}]'
+                latex += '\n'
+            else:
+                in_code_block = False
+                latex += '\\end{lstlisting}\n'
+            continue
+
+        if in_code_block:
+            latex += line + '\n'
+            continue
+
+        # 标题处理
+        if line.startswith('# '):
+            latex += '\\section{' + escape_latex(line[2:]) + '}\n'
+        elif line.startswith('## '):
+            latex += '\\subsection{' + escape_latex(line[3:]) + '}\n'
+        elif line.startswith('### '):
+            latex += '\\subsubsection{' + escape_latex(line[4:]) + '}\n'
+        elif line.startswith('#### '):
+            latex += '\\paragraph{' + escape_latex(line[5:]) + '}\n'
+        # 列表处理
+        elif line.strip().startswith('- ') or line.strip().startswith('* '):
+            latex += '\\begin{itemize}\n'
+            latex += '\\item ' + escape_latex(line.strip()[2:]) + '\n'
+            latex += '\\end{itemize}\n'
+        elif re.match(r'^\d+\. ', line.strip()):
+            latex += '\\begin{enumerate}\n'
+            latex += '\\item ' + escape_latex(re.sub(r'^\d+\. ', '', line.strip())) + '\n'
+            latex += '\\end{enumerate}\n'
+        # 图片处理
+        elif '![' in line:
+            match = re.search(r'!\[([^\]]*)\]\(([^)]+)\)', line)
+            if match:
+                alt_text = match.group(1)
+                img_path = match.group(2)
+                latex += '\\begin{figure}[h]\n'
+                latex += '\\centering\n'
+                latex += f'% \\includegraphics[width=0.8\\textwidth]{{{img_path}}}\n'
+                if alt_text:
+                    latex += f'\\caption{{{escape_latex(alt_text)}}}\n'
+                latex += '\\end{figure}\n'
+        # 数学公式处理 - 保持原样
+        elif line.strip().startswith('$$') or line.strip().endswith('$$'):
+            latex += line + '\n'
+        elif '$' in line:
+            latex += process_inline_math(line) + '\n'
+        # 空行
+        elif not line.strip():
+            latex += '\n'
+        # 普通段落
+        else:
+            latex += escape_latex(line) + '\n'
+
+    latex += r'''
+\end{document}
+'''
+    return latex
+
+
+def escape_latex(text):
+    """转义LaTeX特殊字符"""
+    if not text:
+        return ''
+    # 保留数学公式中的内容
+    parts = []
+    last_end = 0
+    # 匹配 $...$ 或 $$...$$ 的数学公式
+    import re
+    for match in re.finditer(r'\$\$.*?\$\$|\$.*?\$', text):
+        # 转义公式前的文本
+        before = text[last_end:match.start()]
+        before = _escape_latex_chars(before)
+        parts.append(before)
+        # 保持公式原样
+        parts.append(match.group())
+        last_end = match.end()
+    # 转义剩余文本
+    after = text[last_end:]
+    after = _escape_latex_chars(after)
+    parts.append(after)
+    return ''.join(parts)
+
+
+def _escape_latex_chars(text):
+    """转义LaTeX特殊字符（不含数学公式）"""
+    if not text:
+        return ''
+    chars = {
+        '&': r'\&',
+        '%': r'\%',
+        '#': r'\#',
+        '_': r'\_',
+        '{': r'\{',
+        '}': r'\}',
+        '~': r'\textasciitilde{}',
+        '^': r'\textasciicircum{}',
+    }
+    for char, replacement in chars.items():
+        text = text.replace(char, replacement)
+    # 处理反斜杠（但不处理已有的LaTeX命令）
+    text = re.sub(r'\\(?![a-zA-Z])', r'\\textbackslash{}', text)
+    return text
+
+
+def process_inline_math(line):
+    """处理行内数学公式"""
+    # 保持 $...$ 格式的公式不变
+    return escape_latex(line)
+
+
 # 启动时执行一次清理并启动定时清理服务
 cleanup_old_files()
 start_cleanup_scheduler()

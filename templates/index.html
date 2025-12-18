@@ -90,6 +90,16 @@
         .action-menu button { border: none; background: transparent; cursor: pointer; padding: 6px 8px; border-radius: 6px; font-size: 13px; display: flex; align-items: center; gap: 4px; color: #475467; }
         .action-menu button svg { width: 18px; height: 18px; }
         .action-menu button:hover { background: #eef2ff; color: #4a59c4; }
+        .download-dropdown { position: relative; display: inline-block; }
+        .download-menu { position: absolute; top: 100%; right: 0; margin-top: 8px; background: white; border-radius: 12px; box-shadow: 0 10px 40px rgba(15,23,42,0.15); border: 1px solid #e5e7eb; min-width: 200px; z-index: 100; opacity: 0; visibility: hidden; transform: translateY(-8px); transition: all 0.2s ease; }
+        .download-menu.show { opacity: 1; visibility: visible; transform: translateY(0); }
+        .download-menu-item { display: flex; align-items: center; gap: 12px; padding: 12px 16px; cursor: pointer; transition: background 0.15s ease; border-bottom: 1px solid #f3f4f6; }
+        .download-menu-item:first-child { border-radius: 12px 12px 0 0; }
+        .download-menu-item:last-child { border-bottom: none; border-radius: 0 0 12px 12px; }
+        .download-menu-item:hover { background: #f8fafc; }
+        .download-menu-item svg { width: 20px; height: 20px; flex-shrink: 0; }
+        .download-menu-item .format-name { font-weight: 500; color: #1f2937; font-size: 14px; }
+        .download-menu-item .format-icon { color: #6b7280; }
         .toast { position: fixed; bottom: 30px; right: 30px; background: rgba(17,24,39,0.9); color: white; padding: 10px 16px; border-radius: 8px; box-shadow: 0 12px 30px rgba(15,23,42,0.3); opacity: 0; transform: translateY(20px); transition: all 0.3s ease; z-index: 1300; }
         .toast.show { opacity: 1; transform: translateY(0); }
         .translation-overlay { position: absolute; top: 44px; left: 0; right: 0; bottom: 0; background: rgba(255,255,255,0.92); display: flex; align-items: center; justify-content: center; z-index: 20; }
@@ -157,13 +167,63 @@
             <div class="content-toolbar">
                 <span class="tab">Markdown</span>
                 <div class="toolbar-actions">
-                    <button class="toolbar-btn" id="downloadPdfBtn" title="下载译文PDF">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                            <polyline points="7 10 12 15 17 10" />
-                            <line x1="12" y1="15" x2="12" y2="3" />
-                        </svg>
-                    </button>
+                    <div class="download-dropdown">
+                        <button class="toolbar-btn" id="downloadBtn" title="下载译文">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                <polyline points="7 10 12 15 17 10" />
+                                <line x1="12" y1="15" x2="12" y2="3" />
+                            </svg>
+                        </button>
+                        <div class="download-menu" id="downloadMenu">
+                            <div class="download-menu-item" data-format="pdf">
+                                <svg class="format-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                                    <polyline points="14 2 14 8 20 8"/>
+                                    <line x1="16" y1="13" x2="8" y2="13"/>
+                                    <line x1="16" y1="17" x2="8" y2="17"/>
+                                    <polyline points="10 9 9 9 8 9"/>
+                                </svg>
+                                <span class="format-name">PDF</span>
+                            </div>
+                            <div class="download-menu-item" data-format="latex">
+                                <svg class="format-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <text x="4" y="17" font-size="14" font-family="serif" fill="currentColor" stroke="none">Σ</text>
+                                </svg>
+                                <span class="format-name">LaTeX</span>
+                            </div>
+                            <div class="download-menu-item" data-format="html">
+                                <svg class="format-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="16 18 22 12 16 6"/>
+                                    <polyline points="8 6 2 12 8 18"/>
+                                </svg>
+                                <span class="format-name">HTML</span>
+                            </div>
+                            <div class="download-menu-item" data-format="docx">
+                                <svg class="format-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                                    <polyline points="14 2 14 8 20 8"/>
+                                    <text x="7" y="17" font-size="7" font-weight="bold" fill="currentColor" stroke="none">W</text>
+                                </svg>
+                                <span class="format-name">DOCX</span>
+                            </div>
+                            <div class="download-menu-item" data-format="json">
+                                <svg class="format-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M4 7h4v10H4z"/>
+                                    <path d="M16 7h4v10h-4z"/>
+                                    <line x1="12" y1="4" x2="12" y2="20"/>
+                                </svg>
+                                <span class="format-name">JSON (带页眉页脚等信息)</span>
+                            </div>
+                            <div class="download-menu-item" data-format="markdown">
+                                <svg class="format-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                                    <text x="6" y="16" font-size="10" font-weight="bold" fill="currentColor" stroke="none">M↓</text>
+                                </svg>
+                                <span class="format-name">Markdown</span>
+                            </div>
+                        </div>
+                    </div>
                     <button class="toolbar-btn" id="translateSettingsBtn" title="设置">
                         <svg viewBox="0 0 24 24" fill="none" stroke="#4B5563" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M12.22 2H11.78C11.23 2 10.74 2.37 10.61 2.91L10.33 4.14C10.25 4.51 9.94 4.8 9.57 4.9C9.17 5.01 8.78 5.17 8.41 5.38C8.07 5.57 7.64 5.56 7.32 5.35L6.23 4.63C5.77 4.33 5.16 4.41 4.8 4.8L4.49 5.11C4.13 5.47 4.05 6.08 4.35 6.54L5.07 7.63C5.28 7.95 5.29 8.38 5.1 8.72C4.89 9.09 4.73 9.48 4.62 9.88C4.52 10.25 4.23 10.56 3.86 10.64L2.63 10.92C2.09 11.05 1.72 11.54 1.72 12.09V12.53C1.72 13.08 2.09 13.57 2.63 13.7L3.86 13.98C4.23 14.06 4.52 14.37 4.62 14.74C4.73 15.14 4.89 15.53 5.1 15.9C5.29 16.24 5.28 16.67 5.07 16.99L4.35 18.08C4.05 18.54 4.13 19.15 4.49 19.51L4.8 19.82C5.16 20.21 5.77 20.29 6.23 19.99L7.32 19.27C7.64 19.06 8.07 19.05 8.41 19.24C8.78 19.45 9.17 19.61 9.57 19.72C9.94 19.82 10.25 20.11 10.33 20.48L10.61 21.71C10.74 22.25 11.23 22.62 11.78 22.62H12.22C12.77 22.62 13.26 22.25 13.39 21.71L13.67 20.48C13.75 20.11 14.06 19.82 14.43 19.72C14.83 19.61 15.22 19.45 15.59 19.24C15.93 19.05 16.36 19.06 16.68 19.27L17.77 19.99C18.23 20.29 18.84 20.21 19.2 19.82L19.51 19.51C19.87 19.15 19.95 18.54 19.65 18.08L18.93 16.99C18.72 16.67 18.71 16.24 18.9 15.9C19.11 15.53 19.27 15.14 19.38 14.74C19.48 14.37 19.77 14.06 20.14 13.98L21.37 13.7C21.91 13.57 22.28 13.08 22.28 12.53V12.09C22.28 11.54 21.91 11.05 21.37 10.92L20.14 10.64C19.77 10.56 19.48 10.25 19.38 9.88C19.27 9.48 19.11 9.09 18.9 8.72C18.71 8.38 18.72 7.95 18.93 7.63L19.65 6.54C19.95 6.08 19.87 5.47 19.51 5.11L19.2 4.8C18.84 4.41 18.23 4.33 17.77 4.63L16.68 5.35C16.36 5.56 15.93 5.57 15.59 5.38C15.22 5.17 14.83 5.01 14.43 4.9C14.06 4.8 13.75 4.51 13.67 4.14L13.39 2.91C13.26 2.37 12.77 2 12.22 2Z" />
@@ -370,8 +430,31 @@
             updateSettingsForm();
             openSettingsModal();
         });
-        const downloadPdfBtn = document.getElementById('downloadPdfBtn');
-        downloadPdfBtn.addEventListener('click', downloadTranslatedPdf);
+
+        // 下载按钮和下载菜单
+        const downloadBtn = document.getElementById('downloadBtn');
+        const downloadMenu = document.getElementById('downloadMenu');
+
+        downloadBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            downloadMenu.classList.toggle('show');
+        });
+
+        // 点击其他地方关闭下载菜单
+        document.addEventListener('click', (e) => {
+            if (!downloadMenu.contains(e.target) && e.target !== downloadBtn) {
+                downloadMenu.classList.remove('show');
+            }
+        });
+
+        // 下载菜单项点击事件
+        downloadMenu.querySelectorAll('.download-menu-item').forEach(item => {
+            item.addEventListener('click', () => {
+                const format = item.dataset.format;
+                downloadMenu.classList.remove('show');
+                downloadDocument(format);
+            });
+        });
         providerRadios.forEach(radio => radio.addEventListener('change', updateOpenAIFieldVisibility));
         actionMenu.addEventListener('mouseenter', () => {
             clearTimeout(actionMenuHideTimer);
@@ -1506,7 +1589,7 @@
             alert('错误: ' + message);
         }
 
-        async function downloadTranslatedPdf() {
+        async function downloadDocument(format) {
             if (!currentTaskId) {
                 showToast('请先上传并解析文档');
                 return;
@@ -1516,10 +1599,25 @@
                 return;
             }
 
-            showLoadingMessage('正在生成PDF...');
+            const formatNames = {
+                pdf: 'PDF',
+                latex: 'LaTeX',
+                html: 'HTML',
+                docx: 'DOCX',
+                json: 'JSON',
+                markdown: 'Markdown'
+            };
+            const formatName = formatNames[format] || format.toUpperCase();
+
+            showLoadingMessage(`正在生成${formatName}文件...`);
 
             try {
-                const response = await fetch(`/api/download_pdf/${currentTaskId}`, {
+                // PDF使用原有的API路径
+                const apiUrl = format === 'pdf'
+                    ? `/api/download_pdf/${currentTaskId}`
+                    : `/api/download/${currentTaskId}/${format}`;
+
+                const response = await fetch(apiUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ content_list: contentList })
@@ -1527,7 +1625,7 @@
 
                 if (!response.ok) {
                     const errorData = await response.json();
-                    throw new Error(errorData.error || 'PDF生成失败');
+                    throw new Error(errorData.error || `${formatName}生成失败`);
                 }
 
                 // 下载文件
@@ -1535,18 +1633,35 @@
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = `translated_${currentTaskId}.pdf`;
+
+                // 根据格式设置文件扩展名
+                const extensions = {
+                    pdf: 'pdf',
+                    latex: 'tex',
+                    html: 'html',
+                    docx: 'docx',
+                    json: 'json',
+                    markdown: 'md'
+                };
+                const ext = extensions[format] || format;
+                a.download = `translated_${currentTaskId}.${ext}`;
+
                 document.body.appendChild(a);
                 a.click();
                 window.URL.revokeObjectURL(url);
                 document.body.removeChild(a);
 
                 hideLoadingMessage();
-                showToast('PDF下载成功');
+                showToast(`${formatName}下载成功`);
             } catch (error) {
                 hideLoadingMessage();
-                showError(error.message || 'PDF下载失败');
+                showError(error.message || `${formatName}下载失败`);
             }
+        }
+
+        // 保留旧的函数名以兼容
+        async function downloadTranslatedPdf() {
+            return downloadDocument('pdf');
         }
 
         // 分隔条拖拽
