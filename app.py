@@ -102,6 +102,14 @@ def start_cleanup_scheduler():
     print("🧹 文件清理服务已启动（每小时检查，清理超过24小时的文件）")
 
 
+def _is_pdf_file(path: str) -> bool:
+    try:
+        with open(path, "rb") as f:
+            return f.read(5) == b"%PDF-"
+    except OSError:
+        return False
+
+
 class ParseTask:
     def __init__(self, task_id: str, filename: str):
         self.task_id = task_id
@@ -141,12 +149,13 @@ def process_parse(task_id: str, input_path: str):
         task.progress = 90
         task.message = "处理完成"
         task.result = result
-        # 将PDF复制到outputs目录，使用固定命名便于查找
-        task_output_dir = os.path.join(OUTPUT_FOLDER, task_id)
-        os.makedirs(task_output_dir, exist_ok=True)
-        pdf_dest = os.path.join(task_output_dir, "original.pdf")
-        shutil.copy2(input_path, pdf_dest)
-        task.pdf_path = pdf_dest
+        # 仅在原文件为PDF时才提供预览
+        if input_path.lower().endswith(".pdf"):
+            task_output_dir = os.path.join(OUTPUT_FOLDER, task_id)
+            os.makedirs(task_output_dir, exist_ok=True)
+            pdf_dest = os.path.join(task_output_dir, "original.pdf")
+            shutil.copy2(input_path, pdf_dest)
+            task.pdf_path = pdf_dest
         task.status = "completed"
         task.progress = 100
         task.message = "解析完成!"
@@ -456,11 +465,13 @@ def get_pdf(task_id):
     # 优先从任务对象获取
     task = tasks.get(task_id)
     if task and task.pdf_path and os.path.exists(task.pdf_path):
-        print(f"✓ 返回PDF文件(从任务): {task.pdf_path}")
-        return send_file(task.pdf_path, mimetype='application/pdf')
+        if _is_pdf_file(task.pdf_path):
+            print(f"✓ 返回PDF文件(从任务): {task.pdf_path}")
+            return send_file(task.pdf_path, mimetype='application/pdf')
+        print(f"⚠️ PDF请求失败: 文件不是PDF {task.pdf_path}")
     # 任务对象不存在时，尝试从outputs目录查找
     pdf_path = os.path.join(OUTPUT_FOLDER, task_id, "original.pdf")
-    if os.path.exists(pdf_path):
+    if os.path.exists(pdf_path) and _is_pdf_file(pdf_path):
         print(f"✓ 返回PDF文件(从outputs): {pdf_path}")
         return send_file(pdf_path, mimetype='application/pdf')
     print(f"⚠️ PDF请求失败: 任务 {task_id} 的PDF文件不存在")

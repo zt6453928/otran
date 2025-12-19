@@ -596,7 +596,12 @@
                     document.getElementById('pdfPanel').innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#666;">PDF预览不可用</div>';
                 } else {
                     const pdfBlob = await pdfResponse.blob();
-                    await loadPDF(URL.createObjectURL(pdfBlob));
+                    try {
+                        await loadPDF(URL.createObjectURL(pdfBlob));
+                    } catch (error) {
+                        console.warn('PDF加载失败:', error);
+                        document.getElementById('pdfPanel').innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#666;">PDF预览不可用</div>';
+                    }
                 }
                 uploadContainer.style.display = 'none';
                 mainContainer.classList.add('active');
