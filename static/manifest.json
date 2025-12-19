@@ -1,0 +1,17 @@
+{
+  "name": "文档解析翻译器",
+  "short_name": "Otran",
+  "description": "PDF文档解析与翻译工具",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "icons": [
+    {
+      "src": "/static/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
